@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ClauseMark</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div>
+          <h1>ClauseMark Document Analyzer</h1>
+          <p>Upload a PDF or image, process clauses, and query the document with an intelligent agent.</p>
+        </div>
+      </header>
+
+      <main class="content-grid">
+        <section class="panel card">
+          <h2>Upload document</h2>
+          <form id="upload-form">
+            <label class="file-field">
+              <span>Select file</span>
+              <input type="file" id="document-file" accept=".pdf,.png,.jpg,.jpeg,.tiff" />
+            </label>
+            <button type="submit" class="button primary">Upload</button>
+          </form>
+
+          <div id="upload-status" class="status-card"></div>
+          <button id="process-button" class="button secondary" disabled>Process document</button>
+        </section>
+
+        <section class="panel card">
+          <h2>Document result</h2>
+          <div id="result-summary" class="result-card">Upload and process a document to begin.</div>
+        </section>
+
+        <section class="panel card" id="clauses-panel" hidden>
+          <h2>Clauses</h2>
+          <div id="clause-list"></div>
+        </section>
+
+        <section class="panel card" id="agent-panel" hidden>
+          <h2>Ask the clause agent</h2>
+          <form id="agent-form">
+            <label>Task</label>
+            <input type="text" id="agent-task" placeholder="Summarize obligations, answer a question..." required />
+
+            <label>Question (optional)</label>
+            <input type="text" id="agent-question" placeholder="What is required by the first clause?" />
+
+            <button type="submit" class="button primary">Ask agent</button>
+          </form>
+          <div id="agent-answer" class="result-card"></div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
