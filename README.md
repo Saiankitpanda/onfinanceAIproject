@@ -24,7 +24,7 @@ ClauseMark is designed as a simple service-based backend with a static frontend.
 - `app/services/clause_service.py` — groups extracted text into clause blocks
 - `app/services/annotation_service.py` — builds page annotation structure for clauses
 - `app/services/agent_service.py` — wraps agent query logic using OpenAI
-- `app/frontend/` — HTML, CSS, and JS for the Linux-style frontend UI
+- `frontend/` — HTML, CSS, and JS for the Linux-style frontend UI
 
 See the architecture sketch here:
 

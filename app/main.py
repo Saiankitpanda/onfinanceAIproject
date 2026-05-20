@@ -7,7 +7,7 @@ from app.api.routes_documents import router as documents_router
 
 app = FastAPI(title="ClauseMark Backend")
 
-frontend_dir = Path(__file__).resolve().parent / "frontend"
+frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
 app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
 
 app.include_router(documents_router)
@@ -22,4 +22,3 @@ def health_check():
         "status": "ok",
         "service": "ClauseMark Backend"
     }
-
