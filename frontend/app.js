@@ -34,6 +34,53 @@ const appendMutedText = (container, text) => {
   container.appendChild(row);
 };
 
+const splitParagraphs = (text) =>
+  String(text || "")
+    .split(/\n\s*\n/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+const renderParagraphBlock = (container, text) => {
+  const paragraphs = splitParagraphs(text);
+
+  if (!paragraphs.length) {
+    const p = document.createElement("p");
+    p.textContent = "No response returned.";
+    container.appendChild(p);
+    return;
+  }
+
+  paragraphs.forEach((paragraph) => {
+    const p = document.createElement("p");
+    p.textContent = paragraph;
+    container.appendChild(p);
+  });
+};
+
+const appendChatBubble = (thread, role, label, text) => {
+  const bubble = document.createElement("article");
+  bubble.className = `chat-bubble chat-${role}`;
+
+  const header = document.createElement("div");
+  header.className = "chat-meta";
+  header.textContent = label;
+
+  const body = document.createElement("div");
+  body.className = "chat-body";
+  renderParagraphBlock(body, text);
+
+  bubble.append(header, body);
+  thread.appendChild(bubble);
+};
+
+const renderAgentConversation = (question, answer) => {
+  if (!agentAnswer) return;
+
+  clearElement(agentAnswer);
+  appendChatBubble(agentAnswer, "user", "You", question || "No question provided.");
+  appendChatBubble(agentAnswer, "assistant", "ClauseMark", answer || "No answer returned.");
+};
+
 const updateStatus = (message, type = "info") => {
   uploadStatus.textContent = message;
   uploadStatus.style.color = type === "danger" ? "#f97316" : "#cbd5e1";
@@ -157,7 +204,7 @@ agentForm.addEventListener("submit", async (event) => {
   }
 
   const data = await response.json();
-  agentAnswer.textContent = data.answer || "No answer returned.";
+  renderAgentConversation(question, data.answer);
   updateStatus("Agent response received.");
 });
 

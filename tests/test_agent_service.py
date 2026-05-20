@@ -12,6 +12,7 @@ def test_agent_falls_back_locally_without_api_key(monkeypatch):
 
     assert "Local agent summary" in result
     assert "Clause 1" in result
+    assert "\n\n" in result
 
 
 def test_agent_returns_local_answer_for_question(monkeypatch):
@@ -34,5 +35,7 @@ def test_agent_returns_local_answer_for_question(monkeypatch):
         question="When is reporting due?",
     )
 
-    assert "Local answer based on the matching clauses" in result or "Question understood" in result
+    assert "Answer:" in result
+    assert "Explanation:" in result
+    assert "\n\n" in result
     assert "Clause 2" in result

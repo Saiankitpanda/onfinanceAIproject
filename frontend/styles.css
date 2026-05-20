@@ -429,6 +429,50 @@ input[type="file"]:focus {
   margin-top: 10px;
 }
 
+.chat-thread {
+  margin-top: 16px;
+  display: grid;
+  gap: 14px;
+}
+
+.chat-bubble {
+  max-width: 92%;
+  border-radius: 14px;
+  padding: 14px 16px;
+  border: 1px solid rgba(96, 165, 250, 0.16);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.18);
+}
+
+.chat-user {
+  margin-left: auto;
+  background: linear-gradient(135deg, rgba(23, 147, 209, 0.26), rgba(34, 211, 238, 0.10));
+}
+
+.chat-assistant {
+  margin-right: auto;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.chat-meta {
+  margin-bottom: 8px;
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: rgba(230, 238, 252, 0.72);
+}
+
+.chat-body {
+  display: grid;
+  gap: 10px;
+  line-height: 1.7;
+  color: var(--text);
+}
+
+.chat-body p {
+  margin: 0;
+}
+
 .ocr-controls {
   margin-top: 12px;
   display: flex;

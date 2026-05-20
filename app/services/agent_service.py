@@ -182,10 +182,10 @@ def _format_clause_summary(clauses: Iterable[dict]) -> str:
 
 def _build_local_summary(clauses: list) -> str:
     selected = clauses[:5]
+    body = _format_clause_summary(selected)
     return (
-        "Local agent summary:\n"
-        f"{_format_clause_summary(selected)}\n"
-        "\nThis answer was generated locally because the cloud model was not used."
+        f"Local agent summary:\n{body or 'No clause details available.'}\n\n"
+        "Why it matters: this answer is built from the extracted clause text, so you can quickly scan the most important points without needing the cloud model."
     )
 
 
@@ -195,10 +195,10 @@ def _build_local_explanation(clauses: list, question: str | None) -> str:
 
     target = question.strip() if question else ""
     relevant = _find_relevant_clauses(target, clauses) if target else clauses[:2]
+    explanation = _format_clause_summary(relevant)
     return (
-        "Local explanation:\n"
-        f"{_format_clause_summary(relevant)}\n"
-        "\nIf you want a deeper answer, upload a cleaner clause split or ask a narrower question."
+        f"Local explanation:\n{explanation or 'No relevant clauses found.'}\n\n"
+        "Why it matters: the answer stays close to the clause text, so you can map each point back to the document and ask a narrower follow-up if needed."
     )
 
 
@@ -211,10 +211,10 @@ def _build_local_question_answer(clauses: list, question: str | None) -> str:
     if not relevant:
         return "The provided clauses do not contain enough information."
 
+    answer = _format_clause_summary(relevant)
     return (
-        "Local answer based on the matching clauses:\n"
-        f"{_format_clause_summary(relevant)}\n"
-        f"\nQuestion understood: {question_text}"
+        f"Answer: {answer or 'No matching clauses were found.'}\n\n"
+        f"Explanation: I matched your question against the closest clauses and surfaced the most relevant lines. Question understood: {question_text}"
     )
 
 
@@ -321,6 +321,25 @@ def _local_agent_response(task: str, clauses: list, question: str | None) -> str
     return _build_local_question_answer(clauses, question)
 
 
+def _format_cloud_two_paragraph_prompt(task: str, question: str | None) -> str:
+    return f"""
+Respond in exactly 2 short paragraphs separated by a blank line.
+
+Paragraph 1:
+- Give the direct answer first.
+- Keep it concise and easy to scan.
+
+Paragraph 2:
+- Explain the answer in plain language.
+- Mention clause IDs where helpful.
+- If there is not enough information, say:
+"The provided clauses do not contain enough information."
+
+Task: {task}
+Question: {question if question else "No specific question provided."}
+"""
+
+
 def run_clause_agent(task: str, clauses: list, question: str | None = None) -> str:
     if not clauses:
         return "No clauses were provided to the agent."
@@ -359,6 +378,9 @@ User Question:
 
 Extracted Clauses:
 {clause_context}
+
+Formatting Reminder:
+{_format_cloud_two_paragraph_prompt(task, question)}
 """
 
     if use_cloud_model:
