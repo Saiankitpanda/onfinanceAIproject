@@ -33,7 +33,7 @@ def enrich_clauses_with_annotations(clauses):
             "page_start": clause["page_start"],
             "page_end": clause["page_end"],
             "bbox": bbox,
-            "confidence": average_confidence(blocks)
+            "confidence": average_confidence(blocks),
         }
 
         enriched.append(enriched_clause)
@@ -50,18 +50,16 @@ def build_page_annotations(clauses):
         if page not in pages:
             pages[page] = []
 
-        pages[page].append({
-            "clause_id": clause["clause_id"],
-            "clause_type": clause["clause_type"],
-            "bbox": clause["bbox"],
-            "label": f"Clause {clause['clause_id']}"
-        })
+        pages[page].append(
+            {
+                "clause_id": clause["clause_id"],
+                "clause_type": clause["clause_type"],
+                "bbox": clause["bbox"],
+                "label": f"Clause {clause['clause_id']}",
+            }
+        )
 
     return [
-        {
-            "page_number": page,
-            "annotations": annotations
-        }
+        {"page_number": page, "annotations": annotations}
         for page, annotations in pages.items()
     ]
-

@@ -1,23 +1,24 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, Request
-from pydantic import BaseModel
-from typing import List, Dict
+import json
+import logging
 import os
 import shutil
 import uuid
-import json
+from typing import Dict, List
 
-from app.services.pdf_service import is_text_pdf, extract_text_blocks_from_pdf
-from app.services.ocr_service import ocr_image_file, ocr_pdf_file
-from app.services.clause_service import group_blocks_into_clauses
-from app.services.annotation_service import (
-    enrich_clauses_with_annotations,
-    build_page_annotations
-)
-from app.services.agent_service import run_clause_agent
-from app.utils.file_utils import sanitize_filename, is_allowed_magic
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from pydantic import BaseModel
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-import logging
+
+from app.services.agent_service import run_clause_agent
+from app.services.annotation_service import (
+    build_page_annotations,
+    enrich_clauses_with_annotations,
+)
+from app.services.clause_service import group_blocks_into_clauses
+from app.services.ocr_service import ocr_image_file, ocr_pdf_file
+from app.services.pdf_service import extract_text_blocks_from_pdf, is_text_pdf
+from app.utils.file_utils import is_allowed_magic, sanitize_filename
 
 RATE_LIMIT_DEFAULT = os.getenv("RATE_LIMIT_DEFAULT", "200/minute")
 RATE_LIMIT_AGENT = os.getenv("RATE_LIMIT_AGENT", "10/minute")
@@ -90,10 +91,7 @@ async def upload_document(request: Request, file: UploadFile = File(...)):
     extension = os.path.splitext(filename)[1].lower()
 
     if extension not in allowed_extensions:
-        raise HTTPException(
-            status_code=400,
-            detail="Unsupported file type"
-        )
+        raise HTTPException(status_code=400, detail="Unsupported file type")
 
     document_id = f"doc_{uuid.uuid4().hex[:8]}"
 
@@ -110,7 +108,9 @@ async def upload_document(request: Request, file: UploadFile = File(...)):
         content_length = request.headers.get("content-length")
         if content_length is not None:
             if int(content_length) > MAX_UPLOAD_SIZE:
-                raise HTTPException(status_code=413, detail="Uploaded file is too large")
+                raise HTTPException(
+                    status_code=413, detail="Uploaded file is too large"
+                )
     except ValueError:
         # ignore invalid header and continue to streaming
         pass
@@ -134,7 +134,9 @@ async def upload_document(request: Request, file: UploadFile = File(...)):
                         os.remove(saved_file_path)
                     except Exception:
                         pass
-                    raise HTTPException(status_code=413, detail="Uploaded file is too large")
+                    raise HTTPException(
+                        status_code=413, detail="Uploaded file is too large"
+                    )
                 f.write(chunk)
     except HTTPException:
         raise
@@ -144,7 +146,9 @@ async def upload_document(request: Request, file: UploadFile = File(...)):
             os.remove(saved_file_path)
         except Exception:
             pass
-        raise HTTPException(status_code=500, detail=f"Failed to save uploaded file: {error}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to save uploaded file: {error}"
+        )
 
     # Basic magic-bytes validation to avoid content-type spoofing
     if not is_allowed_magic(saved_file_path, allowed_extensions):
@@ -152,14 +156,17 @@ async def upload_document(request: Request, file: UploadFile = File(...)):
             os.remove(saved_file_path)
         except Exception:
             pass
-        raise HTTPException(status_code=400, detail="Uploaded file content does not match declared file type")
+        raise HTTPException(
+            status_code=400,
+            detail="Uploaded file content does not match declared file type",
+        )
 
     metadata = {
         "document_id": document_id,
         "filename": filename,
         "file_path": saved_file_path,
         "file_type": extension,
-        "status": "uploaded"
+        "status": "uploaded",
     }
 
     metadata_path = os.path.join(document_output_dir, "metadata.json")
@@ -175,10 +182,7 @@ def process_document(document_id: str):
     metadata_path = os.path.join(OUTPUT_DIR, document_id, "metadata.json")
 
     if not os.path.exists(metadata_path):
-        raise HTTPException(
-            status_code=404,
-            detail="Document not found"
-        )
+        raise HTTPException(status_code=404, detail="Document not found")
 
     with open(metadata_path, "r") as f:
         metadata = json.load(f)
@@ -187,10 +191,7 @@ def process_document(document_id: str):
     file_type = metadata["file_type"]
 
     if not os.path.exists(file_path):
-        raise HTTPException(
-            status_code=404,
-            detail="Uploaded file not found"
-        )
+        raise HTTPException(status_code=404, detail="Uploaded file not found")
 
     try:
         if file_type == ".pdf":
@@ -208,7 +209,10 @@ def process_document(document_id: str):
         extraction_mode = "extraction_error"
         blocks = []
         extraction_error = str(error)
-        logger.exception("Document extraction failed", extra={"document_id": document_id, "error": extraction_error})
+        logger.exception(
+            "Document extraction failed",
+            extra={"document_id": document_id, "error": extraction_error},
+        )
 
     # Save raw OCR/text blocks to outputs/{document_id}/ocr_blocks.json
     ocr_output_path = os.path.join(OUTPUT_DIR, document_id, "ocr_blocks.json")
@@ -221,7 +225,7 @@ def process_document(document_id: str):
     }
 
     # If there was an extraction error, include it in the OCR payload
-    if 'extraction_error' in locals():
+    if "extraction_error" in locals():
         ocr_payload["error"] = extraction_error
 
     try:
@@ -238,7 +242,10 @@ def process_document(document_id: str):
     except Exception as error:
         # Graceful handling: return partial result with clause processing error
         clause_error = str(error)
-        logger.exception("Clause processing failed", extra={"document_id": document_id, "error": clause_error})
+        logger.exception(
+            "Clause processing failed",
+            extra={"document_id": document_id, "error": clause_error},
+        )
         result = {
             "document_id": document_id,
             "filename": metadata["filename"],
@@ -268,7 +275,7 @@ def process_document(document_id: str):
         "total_blocks": len(blocks),
         "total_clauses": len(clauses),
         "clauses": clauses,
-        "pages": annotations
+        "pages": annotations,
     }
 
     output_path = os.path.join(OUTPUT_DIR, document_id, "clauses.json")
@@ -285,8 +292,7 @@ def get_clauses(document_id: str):
 
     if not os.path.exists(output_path):
         raise HTTPException(
-            status_code=404,
-            detail="Clauses not found. Process the document first."
+            status_code=404, detail="Clauses not found. Process the document first."
         )
 
     with open(output_path, "r") as f:
@@ -299,20 +305,21 @@ def get_annotations(document_id: str):
 
     if not os.path.exists(output_path):
         raise HTTPException(
-            status_code=404,
-            detail="Annotations not found. Process the document first."
+            status_code=404, detail="Annotations not found. Process the document first."
         )
 
     with open(output_path, "r") as f:
         data = json.load(f)
 
-    return {
-        "document_id": document_id,
-        "pages": data.get("pages", [])
-    }
+    return {"document_id": document_id, "pages": data.get("pages", [])}
 
 
-@router.get("/{document_id}/ocr", response_model=OcrBlocksResponse, summary="Get OCR/text blocks", response_description="Raw OCR/text blocks extracted from the uploaded document")
+@router.get(
+    "/{document_id}/ocr",
+    response_model=OcrBlocksResponse,
+    summary="Get OCR/text blocks",
+    response_description="Raw OCR/text blocks extracted from the uploaded document",
+)
 def get_ocr_blocks(document_id: str):
     """Return raw OCR/text blocks saved during processing.
 
@@ -325,7 +332,7 @@ def get_ocr_blocks(document_id: str):
     if not os.path.exists(ocr_path):
         raise HTTPException(
             status_code=404,
-            detail="OCR/text blocks not found. Process the document first."
+            detail="OCR/text blocks not found. Process the document first.",
         )
 
     with open(ocr_path, "r") as f:
@@ -340,7 +347,7 @@ def ask_agent(document_id: str, request: AgentRequest):
     if not os.path.exists(output_path):
         raise HTTPException(
             status_code=404,
-            detail="Clauses not found. Process the document before using the agent."
+            detail="Clauses not found. Process the document before using the agent.",
         )
 
     with open(output_path, "r") as f:
@@ -350,8 +357,7 @@ def ask_agent(document_id: str, request: AgentRequest):
 
     if not clauses:
         raise HTTPException(
-            status_code=400,
-            detail="No clauses available for agent analysis."
+            status_code=400, detail="No clauses available for agent analysis."
         )
 
     try:
@@ -371,7 +377,14 @@ def ask_agent(document_id: str, request: AgentRequest):
     except Exception as error:
         answer = f"Agent invocation failed: {str(error)}"
         agent_status = "error"
-        logger.exception("Agent invocation failed", extra={"document_id": document_id, "task": request.task, "error": str(error)})
+        logger.exception(
+            "Agent invocation failed",
+            extra={
+                "document_id": document_id,
+                "task": request.task,
+                "error": str(error),
+            },
+        )
 
     return {
         "document_id": document_id,

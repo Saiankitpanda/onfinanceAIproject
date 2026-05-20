@@ -1,6 +1,5 @@
 import re
 
-
 CLAUSE_START_PATTERN = re.compile(
     r"(?<!\S)("
     r"\d+\.\d+\.\d+|"
@@ -60,7 +59,7 @@ def extract_clause_id(text: str):
         r"^(\([a-z]\))",
         r"^(\([ivxlcdm]+\))",
         r"^(clause\s+\d+)",
-        r"^(section\s+\d+)"
+        r"^(section\s+\d+)",
     ]
 
     for pattern in patterns:
@@ -73,12 +72,7 @@ def extract_clause_id(text: str):
 
 def sort_blocks(blocks):
     return sorted(
-        blocks,
-        key=lambda block: (
-            block["page"],
-            block["bbox"][1],
-            block["bbox"][0]
-        )
+        blocks, key=lambda block: (block["page"], block["bbox"][1], block["bbox"][0])
     )
 
 
@@ -100,11 +94,13 @@ def split_block_on_clause_markers(block):
         if not segment:
             continue
 
-        split_blocks.append({
-            **block,
-            "text": segment,
-            "split_order": index,
-        })
+        split_blocks.append(
+            {
+                **block,
+                "text": segment,
+                "split_order": index,
+            }
+        )
 
     return split_blocks
 
@@ -139,7 +135,7 @@ def group_blocks_into_clauses(blocks):
                 "text": text,
                 "page_start": block["page"],
                 "page_end": block["page"],
-                "blocks": [block]
+                "blocks": [block],
             }
 
         else:

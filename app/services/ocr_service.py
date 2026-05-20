@@ -1,7 +1,8 @@
+import io
+
 import pymupdf
 import pytesseract
 from PIL import Image
-import io
 
 from app.services.ocr_preprocess_service import preprocess_for_ocr
 
@@ -114,13 +115,15 @@ def _ocr_pil_image(image: Image.Image, page_number: int):
         w = data["width"][i]
         h = data["height"][i]
 
-        word_blocks.append({
-            "page": page_number,
-            "text": text,
-            "bbox": [x, y, x + w, y + h],
-            "confidence": confidence / 100,
-            "block_order": i
-        })
+        word_blocks.append(
+            {
+                "page": page_number,
+                "text": text,
+                "bbox": [x, y, x + w, y + h],
+                "confidence": confidence / 100,
+                "block_order": i,
+            }
+        )
 
     return group_words_into_lines(word_blocks)
 

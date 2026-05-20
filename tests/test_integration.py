@@ -1,9 +1,9 @@
 import io
-import json
+
 from fastapi.testclient import TestClient
-from app.main import app
 
 from app.api import routes_documents
+from app.main import app
 
 
 def make_pdf_bytes():
@@ -28,7 +28,9 @@ def test_full_pipeline_upload_process_and_fetch(tmp_path, monkeypatch):
 
     # Patch the names used by routes_documents (they were imported at module level)
     monkeypatch.setattr(routes_documents, "is_text_pdf", lambda path: True)
-    monkeypatch.setattr(routes_documents, "extract_text_blocks_from_pdf", lambda path: sample_blocks)
+    monkeypatch.setattr(
+        routes_documents, "extract_text_blocks_from_pdf", lambda path: sample_blocks
+    )
     monkeypatch.setattr(routes_documents, "ocr_pdf_file", lambda path: sample_blocks)
     monkeypatch.setattr(routes_documents, "ocr_image_file", lambda path: sample_blocks)
 

@@ -3,7 +3,6 @@ from fastapi.testclient import TestClient
 from app.api import routes_documents
 from app.main import app
 
-
 client = TestClient(app)
 
 

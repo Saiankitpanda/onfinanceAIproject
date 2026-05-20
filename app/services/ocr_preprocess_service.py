@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from PIL import Image
 import cv2
 import numpy as np
+from PIL import Image
 
 
 def preprocess_for_ocr(image: Image.Image) -> Image.Image:
@@ -24,7 +24,9 @@ def preprocess_for_ocr(image: Image.Image) -> Image.Image:
     # Upscale small scans to improve character shapes for OCR.
     h, w = np_img.shape[:2]
     scale = 2.0 if max(h, w) < 1800 else 1.5
-    resized = cv2.resize(np_img, dsize=None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+    resized = cv2.resize(
+        np_img, dsize=None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC
+    )
 
     # Denoise while preserving edges.
     denoised = cv2.fastNlMeansDenoising(resized, h=12)
@@ -44,4 +46,3 @@ def preprocess_for_ocr(image: Image.Image) -> Image.Image:
     cleaned = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=1)
 
     return Image.fromarray(cleaned)
-

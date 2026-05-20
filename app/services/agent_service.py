@@ -1,7 +1,8 @@
-import os
-from dotenv import load_dotenv
 import logging
+import os
 import time
+
+from dotenv import load_dotenv
 
 load_dotenv()
 
@@ -81,7 +82,7 @@ Identify:
 - Suspiciously short clauses
 - Formatting issues
 Return practical debugging suggestions.
-"""
+""",
     }
 
     return instructions.get(task, instructions["answer_question"])
@@ -155,7 +156,9 @@ Extracted Clauses:
             except Exception as error:
                 last_exc = error
                 # Log and decide whether to retry
-                logger.exception("Agent call failed on attempt %s", attempt, extra={"task": task})
+                logger.exception(
+                    "Agent call failed on attempt %s", attempt, extra={"task": task}
+                )
                 if attempt <= max_retries:
                     sleep_time = backoff_base * (2 ** (attempt - 1))
                     time.sleep(sleep_time)

@@ -48,11 +48,15 @@ def is_allowed_magic(file_path: str, allowed_extensions: list[str]) -> bool:
         return True
 
     # JPEG (starts with FF D8 FF)
-    if any(ext in allowed_extensions for ext in [".jpg", ".jpeg"]) and header_lower.startswith(b"\xff\xd8\xff"):
+    if any(
+        ext in allowed_extensions for ext in [".jpg", ".jpeg"]
+    ) and header_lower.startswith(b"\xff\xd8\xff"):
         return True
 
     # TIFF (little/big endian)
-    if ".tiff" in allowed_extensions and (header_lower.startswith(b"II*\x00") or header_lower.startswith(b"MM\x00*")):
+    if ".tiff" in allowed_extensions and (
+        header_lower.startswith(b"II*\x00") or header_lower.startswith(b"MM\x00*")
+    ):
         return True
 
     return False
