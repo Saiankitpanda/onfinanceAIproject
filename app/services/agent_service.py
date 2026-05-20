@@ -1,7 +1,11 @@
 import os
 from dotenv import load_dotenv
+import logging
+import time
 
 load_dotenv()
+
+logger = logging.getLogger("clausemark.agent_service")
 
 
 def build_clause_context(clauses: list) -> str:
@@ -133,20 +137,31 @@ Extracted Clauses:
 {clause_context}
 """
 
-        response = client.responses.create(
-            model="gpt-4.1-mini",
-            input=[
-                {
-                    "role": "system",
-                    "content": system_prompt
-                },
-                {
-                    "role": "user",
-                    "content": user_prompt
-                }
-            ]
-        )
+        # Retry/backoff loop for transient failures
+        max_retries = int(os.getenv("AGENT_MAX_RETRIES", "2"))
+        backoff_base = float(os.getenv("AGENT_BACKOFF_BASE", "1"))
 
-        return response.output_text
+        last_exc = None
+        for attempt in range(1, max_retries + 2):
+            try:
+                response = client.responses.create(
+                    model="gpt-4.1-mini",
+                    input=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                )
+                return response.output_text
+            except Exception as error:
+                last_exc = error
+                # Log and decide whether to retry
+                logger.exception("Agent call failed on attempt %s", attempt, extra={"task": task})
+                if attempt <= max_retries:
+                    sleep_time = backoff_base * (2 ** (attempt - 1))
+                    time.sleep(sleep_time)
+                    continue
+                else:
+                    return f"Agent failed gracefully after retries: {str(last_exc)}"
     except Exception as error:
+        logger.exception("Agent setup failed", extra={"error": str(error)})
         return f"Agent failed gracefully: {str(error)}"

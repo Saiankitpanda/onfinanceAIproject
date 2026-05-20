@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, Request
 from pydantic import BaseModel
 from typing import List, Dict
 import os
@@ -14,13 +14,23 @@ from app.services.annotation_service import (
     build_page_annotations
 )
 from app.services.agent_service import run_clause_agent
-from app.utils.file_utils import sanitize_filename
+from app.utils.file_utils import sanitize_filename, is_allowed_magic
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+import logging
+
+RATE_LIMIT_DEFAULT = os.getenv("RATE_LIMIT_DEFAULT", "200/minute")
+RATE_LIMIT_AGENT = os.getenv("RATE_LIMIT_AGENT", "10/minute")
+limiter = Limiter(key_func=get_remote_address, default_limits=[RATE_LIMIT_DEFAULT])
+
+logger = logging.getLogger("clausemark.routes_documents")
 
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 UPLOAD_DIR = "uploads"
 OUTPUT_DIR = "outputs"
+MAX_UPLOAD_SIZE = int(os.getenv("MAX_UPLOAD_SIZE", 10 * 1024 * 1024))  # 10 MB default
 
 
 class AgentRequest(BaseModel):
@@ -73,7 +83,7 @@ def get_readiness():
 
 
 @router.post("/upload")
-async def upload_document(file: UploadFile = File(...)):
+async def upload_document(request: Request, file: UploadFile = File(...)):
     allowed_extensions = [".pdf", ".png", ".jpg", ".jpeg", ".tiff"]
 
     filename = sanitize_filename(file.filename)
@@ -95,8 +105,54 @@ async def upload_document(file: UploadFile = File(...)):
 
     saved_file_path = os.path.join(document_upload_dir, filename)
 
-    with open(saved_file_path, "wb") as f:
-        f.write(await file.read())
+    # Fast-fail if Content-Length header declares a size larger than the limit
+    try:
+        content_length = request.headers.get("content-length")
+        if content_length is not None:
+            if int(content_length) > MAX_UPLOAD_SIZE:
+                raise HTTPException(status_code=413, detail="Uploaded file is too large")
+    except ValueError:
+        # ignore invalid header and continue to streaming
+        pass
+
+    # Stream upload and enforce size limit
+    size = 0
+    try:
+        with open(saved_file_path, "wb") as f:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > MAX_UPLOAD_SIZE:
+                    # remove partial file
+                    try:
+                        f.close()
+                    except Exception:
+                        pass
+                    try:
+                        os.remove(saved_file_path)
+                    except Exception:
+                        pass
+                    raise HTTPException(status_code=413, detail="Uploaded file is too large")
+                f.write(chunk)
+    except HTTPException:
+        raise
+    except Exception as error:
+        # Cleanup and propagate as server error
+        try:
+            os.remove(saved_file_path)
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail=f"Failed to save uploaded file: {error}")
+
+    # Basic magic-bytes validation to avoid content-type spoofing
+    if not is_allowed_magic(saved_file_path, allowed_extensions):
+        try:
+            os.remove(saved_file_path)
+        except Exception:
+            pass
+        raise HTTPException(status_code=400, detail="Uploaded file content does not match declared file type")
 
     metadata = {
         "document_id": document_id,
@@ -148,10 +204,11 @@ def process_document(document_id: str):
             extraction_mode = "ocr_image"
             blocks = ocr_image_file(file_path)
     except Exception as error:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Document extraction failed: {str(error)}"
-        ) from error
+        # Graceful handling: record the extraction error, continue with empty blocks
+        extraction_mode = "extraction_error"
+        blocks = []
+        extraction_error = str(error)
+        logger.exception("Document extraction failed", extra={"document_id": document_id, "error": extraction_error})
 
     # Save raw OCR/text blocks to outputs/{document_id}/ocr_blocks.json
     ocr_output_path = os.path.join(OUTPUT_DIR, document_id, "ocr_blocks.json")
@@ -162,6 +219,10 @@ def process_document(document_id: str):
         "total_blocks": len(blocks),
         "blocks": blocks,
     }
+
+    # If there was an extraction error, include it in the OCR payload
+    if 'extraction_error' in locals():
+        ocr_payload["error"] = extraction_error
 
     try:
         with open(ocr_output_path, "w") as f:
@@ -175,10 +236,29 @@ def process_document(document_id: str):
         clauses = enrich_clauses_with_annotations(clauses_raw)
         annotations = build_page_annotations(clauses)
     except Exception as error:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Clause processing failed: {str(error)}"
-        ) from error
+        # Graceful handling: return partial result with clause processing error
+        clause_error = str(error)
+        logger.exception("Clause processing failed", extra={"document_id": document_id, "error": clause_error})
+        result = {
+            "document_id": document_id,
+            "filename": metadata["filename"],
+            "status": "clause_processing_failed",
+            "processing_mode": extraction_mode,
+            "total_blocks": len(blocks),
+            "total_clauses": 0,
+            "clauses": [],
+            "pages": [],
+            "error": clause_error,
+        }
+
+        output_path = os.path.join(OUTPUT_DIR, document_id, "clauses.json")
+        try:
+            with open(output_path, "w") as f:
+                json.dump(result, f, indent=2)
+        except Exception:
+            pass
+
+        return result
 
     result = {
         "document_id": document_id,
@@ -253,6 +333,7 @@ def get_ocr_blocks(document_id: str):
 
 
 @router.post("/{document_id}/agent")
+@limiter.limit(RATE_LIMIT_AGENT)
 def ask_agent(document_id: str, request: AgentRequest):
     output_path = os.path.join(OUTPUT_DIR, document_id, "clauses.json")
 
@@ -273,15 +354,29 @@ def ask_agent(document_id: str, request: AgentRequest):
             detail="No clauses available for agent analysis."
         )
 
-    answer = run_clause_agent(
-        task=request.task,
-        clauses=clauses,
-        question=request.question
-    )
+    try:
+        answer = run_clause_agent(
+            task=request.task,
+            clauses=clauses,
+            question=request.question,
+        )
+        agent_status = "ok"
+        # Agent helper returns friendly messages on missing API key or package
+        if isinstance(answer, str) and (
+            answer.lower().startswith("openai_api_key is missing")
+            or answer.lower().startswith("openai package")
+            or answer.lower().startswith("agent failed gracefully")
+        ):
+            agent_status = "error"
+    except Exception as error:
+        answer = f"Agent invocation failed: {str(error)}"
+        agent_status = "error"
+        logger.exception("Agent invocation failed", extra={"document_id": document_id, "task": request.task, "error": str(error)})
 
     return {
         "document_id": document_id,
         "task": request.task,
         "question": request.question,
-        "answer": answer
+        "answer": answer,
+        "agent_status": agent_status,
     }
