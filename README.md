@@ -11,6 +11,23 @@ ClauseMark is a small document analysis app built with FastAPI and a frontend se
 - Groups page text into clauses and builds annotations
 - Provides a clause agent endpoint to answer questions or summarize obligations
 
+## Architecture
+
+ClauseMark is designed as a simple service-based backend with a static frontend. The key pieces are:
+
+- `app/main.py` — starts FastAPI and serves the frontend
+- `app/api/routes_documents.py` — API routes for upload, processing, OCR, clauses, annotations, and agent queries
+- `app/services/pdf_service.py` — PDF parsing and text extraction via PyMuPDF
+- `app/services/ocr_service.py` — OCR extraction for scanned PDFs and images
+- `app/services/clause_service.py` — groups extracted text into clause blocks
+- `app/services/annotation_service.py` — builds page annotation structure for clauses
+- `app/services/agent_service.py` — wraps agent query logic using OpenAI
+- `app/frontend/` — HTML, CSS, and JS for the Linux-style frontend UI
+
+See the architecture sketch here:
+
+https://excalidraw.com/#json=4ITHogBISZRVJ7GOkfvp8,ly9uhQDqssK-6cdd8N-0og
+
 ## Requirements
 
 - Python 3.10+
