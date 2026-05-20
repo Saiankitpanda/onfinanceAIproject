@@ -1,29 +1,79 @@
 # ClauseMark Backend + Frontend
 
-A FastAPI backend with a built-in frontend for uploading documents, extracting clauses, and querying them with an agent.
+ClauseMark is a small document analysis app built with FastAPI and a frontend served directly by the backend. It lets you upload a PDF or image, extract text and clauses, and query the processed document using an intelligent agent.
+
+## What it does
+
+- Serves a frontend at `/`
+- Accepts document uploads (`PDF`, `PNG`, `JPG`, `JPEG`, `TIFF`)
+- Detects whether PDFs are text-based or scanned images
+- Extracts text with native PDF parsing or OCR
+- Groups page text into clauses and builds annotations
+- Provides a clause agent endpoint to answer questions or summarize obligations
 
 ## Requirements
 
 - Python 3.10+
-- Tesseract OCR installed for image/PDF OCR support
-- `OPENAI_API_KEY` in `.env` if you want to use the agent endpoint
+- [Tesseract OCR](https://github.com/tesseract-ocr/tesseract) installed for OCR support
+- `OPENAI_API_KEY` set in `.env` to use the agent functionality
 
 ## Install
 
 ```bash
 cd /home/friday/clausemark-backend
-python3 -m pip install -r requirements.txt
+python3 -m venv venv
+source venv/bin/activate
+python -m pip install --upgrade pip setuptools wheel
+pip install -r requirements.txt
 ```
 
-## Run
+## Environment
+
+Copy the example env file and set your OpenAI key:
 
 ```bash
+cp env.example .env
+```
+
+Then update `.env`:
+
+```env
+OPENAI_API_KEY=your_openai_api_key_here
+```
+
+## Run the app
+
+```bash
+source venv/bin/activate
 uvicorn app.main:app --reload --port 8000
 ```
 
-Then open `http://127.0.0.1:8000/` in your browser.
+Open the app in a browser:
+
+```text
+http://127.0.0.1:8000/
+```
+
+## Sample usage flow
+
+1. Open the app in your browser.
+2. Upload a PDF or supported image file.
+3. Click `Upload` and wait for the file to finish uploading.
+4. Click `Process document` to extract clauses.
+5. Review the extracted clauses in the UI.
+6. Use the agent form to ask a question or request a summary.
+
+## API endpoints
+
+- `POST /documents/upload` - upload a document
+- `POST /documents/{document_id}/process` - process the uploaded document
+- `GET /documents/{document_id}/clauses` - retrieve extracted clauses
+- `GET /documents/{document_id}/annotations` - retrieve page annotations
+- `POST /documents/{document_id}/agent` - query the clause agent
 
 ## Notes
 
-- Add your OpenAI key to `.env` or copy `env.example`.
-- `.env`, `uploads/`, `outputs/`, and `venv/` are ignored by `.gitignore`.
+- The app stores uploaded files in `uploads/` and results in `outputs/`.
+- These folders are ignored by `.gitignore`.
+- If you do not set `OPENAI_API_KEY`, agent queries will not work, but upload/process features still run.
+- If you're on a machine without Tesseract installed, OCR-based processing will fail for scanned PDFs and images.

@@ -7,6 +7,10 @@ const clausesPanel = document.getElementById("clauses-panel");
 const agentPanel = document.getElementById("agent-panel");
 const agentForm = document.getElementById("agent-form");
 const agentAnswer = document.getElementById("agent-answer");
+const ocrPanel = document.getElementById("ocr-panel");
+const ocrButton = document.getElementById("ocr-button");
+const ocrOutput = document.getElementById("ocr-output");
+const ocrDownload = document.getElementById("ocr-download");
 
 let currentDocumentId = null;
 
@@ -83,6 +87,7 @@ processButton.addEventListener("click", async () => {
   displayResult(data);
   displayClauses(data.clauses);
   agentPanel.hidden = false;
+  if (ocrPanel) ocrPanel.hidden = false;
 });
 
 agentForm.addEventListener("submit", async (event) => {
@@ -156,3 +161,38 @@ const init = () => {
 };
 
 init();
+
+// OCR panel: load OCR blocks and show JSON
+if (ocrButton) {
+  ocrButton.addEventListener("click", async () => {
+    if (!currentDocumentId) {
+      updateStatus("Process a document first.", "danger");
+      return;
+    }
+
+    updateStatus("Loading OCR blocks...");
+
+    const resp = await fetch(`/documents/${currentDocumentId}/ocr`);
+    if (!resp.ok) {
+      try {
+        await handleError(resp);
+      } catch (err) {
+        // already handled
+      }
+      return;
+    }
+
+    const data = await resp.json();
+    if (ocrOutput) ocrOutput.textContent = JSON.stringify(data, null, 2);
+    updateStatus("OCR blocks loaded.");
+
+    // enable download link
+    if (ocrDownload) {
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      ocrDownload.href = url;
+      ocrDownload.download = `${currentDocumentId}_ocr_blocks.json`;
+      ocrDownload.hidden = false;
+    }
+  });
+}

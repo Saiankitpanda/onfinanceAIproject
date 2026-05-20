@@ -7,55 +7,112 @@
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
-    <div class="page-shell">
-      <header class="hero">
-        <div>
-          <h1>ClauseMark Document Analyzer</h1>
-          <p>Upload a PDF or image, process clauses, and query the document with an intelligent agent.</p>
+    <div class="linux-window">
+      <div class="titlebar">
+        <div class="title-left">
+          <div class="window-controls">
+            <span class="dot dot-close" title="Close"></span>
+            <span class="dot dot-min" title="Minimize"></span>
+            <span class="dot dot-max" title="Maximize"></span>
+          </div>
+          <div class="app-icon"></div>
+          <div class="title">ClauseMark — Document Analyzer</div>
         </div>
-      </header>
+        <div class="title-right">Linux · Local</div>
+      </div>
 
-      <main class="content-grid">
-        <section class="panel card">
-          <h2>Upload document</h2>
-          <form id="upload-form">
-            <label class="file-field">
-              <span>Select file</span>
-              <input type="file" id="document-file" accept=".pdf,.png,.jpg,.jpeg,.tiff" />
-            </label>
-            <button type="submit" class="button primary">Upload</button>
-          </form>
+      <div class="layout">
+        <aside class="sidebar">
+          <div class="brand">ClauseMark</div>
+          <nav>
+            <button class="nav-item" data-target="upload">Upload</button>
+            <button class="nav-item" data-target="result">Result</button>
+            <button class="nav-item" data-target="clauses">Clauses</button>
+            <button class="nav-item" data-target="agent">Agent</button>
+            <button class="nav-item" data-target="ocr">OCR</button>
+          </nav>
+          <div class="sidebar-foot">v1.0 · Local</div>
+        </aside>
 
-          <div id="upload-status" class="status-card"></div>
-          <button id="process-button" class="button secondary" disabled>Process document</button>
-        </section>
+        <main class="page-shell">
+          <section class="panel hero">
+            <h1>ClauseMark</h1>
+            <p class="muted">Upload PDF/images, extract clauses, and query with an intelligent agent.</p>
+          </section>
 
-        <section class="panel card">
-          <h2>Document result</h2>
-          <div id="result-summary" class="result-card">Upload and process a document to begin.</div>
-        </section>
+          <section id="view-upload" class="content-grid">
+            <div class="panel card">
+              <h2>Upload document</h2>
+              <form id="upload-form">
+                <label class="file-field">
+                  <span>Select file</span>
+                  <input type="file" id="document-file" accept=".pdf,.png,.jpg,.jpeg,.tiff" />
+                </label>
+                <button type="submit" class="button primary">Upload</button>
+              </form>
 
-        <section class="panel card" id="clauses-panel" hidden>
-          <h2>Clauses</h2>
-          <div id="clause-list"></div>
-        </section>
+              <div id="upload-status" class="status-card"></div>
+              <button id="process-button" class="button secondary" disabled>Process document</button>
+            </div>
 
-        <section class="panel card" id="agent-panel" hidden>
-          <h2>Ask the clause agent</h2>
-          <form id="agent-form">
-            <label>Task</label>
-            <input type="text" id="agent-task" placeholder="Summarize obligations, answer a question..." required />
+            <div class="panel card">
+              <h2>Document result</h2>
+              <div id="result-summary" class="result-card">Upload and process a document to begin.</div>
+            </div>
+          </section>
 
-            <label>Question (optional)</label>
-            <input type="text" id="agent-question" placeholder="What is required by the first clause?" />
+          <section id="view-clauses" class="content-grid hidden">
+            <div class="panel card" id="clauses-panel">
+              <h2>Clauses</h2>
+              <div id="clause-list"></div>
+            </div>
+          </section>
 
-            <button type="submit" class="button primary">Ask agent</button>
-          </form>
-          <div id="agent-answer" class="result-card"></div>
-        </section>
-      </main>
+          <section id="view-agent" class="content-grid hidden">
+            <div class="panel card" id="agent-panel">
+              <h2>Ask the clause agent</h2>
+              <form id="agent-form">
+                <label>Task</label>
+                <input type="text" id="agent-task" placeholder="Summarize obligations, answer a question..." required />
+
+                <label>Question (optional)</label>
+                <input type="text" id="agent-question" placeholder="What is required by the first clause?" />
+
+                <button type="submit" class="button primary">Ask agent</button>
+              </form>
+              <div id="agent-answer" class="result-card"></div>
+            </div>
+          </section>
+
+          <section id="view-ocr" class="content-grid hidden">
+            <div class="panel card" id="ocr-panel">
+              <h2>OCR / Text Blocks</h2>
+              <p class="muted">View the raw OCR/text blocks extracted from the processed document.</p>
+              <div class="ocr-controls" style="margin-top:12px;display:flex;gap:10px;align-items:center">
+                <button id="ocr-button" class="button secondary">Load OCR Blocks</button>
+                <a id="ocr-download" class="button" href="#" hidden>Download JSON</a>
+              </div>
+              <pre id="ocr-output" class="ocr-output" aria-live="polite" style="margin-top:14px;white-space:pre-wrap;max-height:420px;overflow:auto;padding:12px;background:var(--surface);border-radius:10px;border:1px solid var(--border)"></pre>
+            </div>
+          </section>
+        </main>
+      </div>
     </div>
 
     <script src="/static/app.js"></script>
+
+    <script>
+      // Simple nav to toggle views (keeps existing IDs intact)
+      document.querySelectorAll('.nav-item').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const t = btn.dataset.target;
+          document.querySelectorAll('#view-upload, #view-clauses, #view-agent').forEach(el => el.classList.add('hidden'));
+          if (t === 'upload') document.getElementById('view-upload').classList.remove('hidden');
+          if (t === 'result') document.getElementById('view-upload').classList.remove('hidden');
+          if (t === 'clauses') document.getElementById('view-clauses').classList.remove('hidden');
+          if (t === 'agent') document.getElementById('view-agent').classList.remove('hidden');
+        });
+      });
+    </script>
   </body>
 </html>

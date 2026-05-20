@@ -10,6 +10,9 @@
   --accent-strong: #0ea5e9;
   --success: #22c55e;
   --danger: #ef4444;
+  --accent-2: #7dd3fc;
+  --sidebar: #0b1220;
+  --glass: rgba(255,255,255,0.03);
 }
 
 * {
@@ -21,10 +24,44 @@ body {
   min-height: 100vh;
   font-family: Inter, system-ui, sans-serif;
   background: radial-gradient(circle at top, rgba(56, 189, 248, 0.12), transparent 28%),
-    radial-gradient(circle at 20% 0%, rgba(59, 130, 246, 0.08), transparent 20%),
-    var(--bg);
-  color: var(--text);
+
+/* Linux window chrome + layout */
+.linux-window {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, rgba(3,7,18,0.6), transparent 40%), var(--bg);
 }
+
+.titlebar {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:10px 18px;
+  border-bottom:1px solid rgba(255,255,255,0.03);
+  background: linear-gradient(90deg, rgba(255,255,255,0.02), rgba(0,0,0,0.02));
+}
+.title-left{display:flex;align-items:center;gap:12px}
+.window-controls{display:flex;gap:8px;align-items:center}
+.dot{width:12px;height:12px;border-radius:50%;display:inline-block}
+.dot-close{background:#ef4444}
+.dot-min{background:#f59e0b}
+.dot-max{background:#10b981}
+.app-icon{font-family: "Segoe UI Symbol", "Noto Color Emoji", sans-serif;color:var(--accent-2);font-size:18px}
+.title{font-weight:700}
+.title-right{color:var(--muted)}
+
+.layout{display:flex;gap:18px;padding:20px}
+.sidebar{width:180px;background:var(--sidebar);border-radius:12px;padding:18px;display:flex;flex-direction:column;justify-content:space-between}
+.brand{font-weight:800;color:var(--accent-2);font-size:1.1rem}
+.sidebar nav{display:flex;flex-direction:column;gap:8px;margin-top:18px}
+.nav-item{background:transparent;color:var(--muted);border:none;padding:10px 12px;border-radius:8px;text-align:left;cursor:pointer}
+.nav-item:hover{background:var(--glass);color:var(--text)}
+.sidebar-foot{color:var(--muted);font-size:0.85rem;margin-top:14px}
+
+    radial-gradient(circle at 20% 0%, rgba(59, 130, 246, 0.08), transparent 20%),
+  flex:1;
+  padding: 8px 0 40px;
 
 .page-shell {
   max-width: 1100px;
@@ -33,11 +70,11 @@ body {
 }
 
 .hero {
-  padding: 32px;
-  margin-bottom: 24px;
-  border-radius: 24px;
-  background: rgba(15, 23, 42, 0.92);
-  border: 1px solid rgba(148, 163, 184, 0.15);
+  padding: 20px 22px;
+  margin-bottom: 18px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+  border: 1px solid rgba(255,255,255,0.03);
 }
 
 .hero h1 {
@@ -57,6 +94,8 @@ body {
   gap: 20px;
 }
 
+.hidden{display:none}
+
 .panel {
   padding: 24px;
   border-radius: 24px;
@@ -65,7 +104,7 @@ body {
 }
 
 .card {
-  box-shadow: 0 18px 70px rgba(15, 23, 42, 0.14);
+  box-shadow: 0 18px 70px rgba(3, 6, 12, 0.5);
 }
 
 button.button {
@@ -113,6 +152,15 @@ input[type="file"] {
   color: var(--text);
 }
 
+/* Terminal-like code panel for results */
+.result-card {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", "Courier New", monospace;
+  background: linear-gradient(180deg, rgba(0,0,0,0.2), rgba(255,255,255,0.02));
+  border-radius: 12px;
+  padding: 14px;
+  color: var(--accent-2);
+}
+
 input[type="file"] {
   padding: 14px;
 }
@@ -139,9 +187,9 @@ input[type="file"] {
 
 .clause-card {
   padding: 18px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.02));
+  border: 1px solid rgba(255,255,255,0.03);
 }
 
 .clause-card h3 {
@@ -157,11 +205,27 @@ input[type="file"] {
 
 @media (min-width: 860px) {
   .content-grid {
-    grid-template-columns: minmax(320px, 420px) minmax(320px, 1fr);
+    grid-template-columns: 1fr 1fr;
   }
-
-  #clauses-panel,
-  #agent-panel {
-    grid-column: span 2;
-  }
+  .layout{padding:28px}
 }
+
+@media (max-width: 860px){
+  .layout{flex-direction:column;padding:12px}
+  .sidebar{width:100%;flex-direction:row;gap:12px;padding:10px}
+  .nav-item{flex:1}
+}
+
+/* OCR output styling */
+.ocr-output {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", "Courier New", monospace;
+  color: var(--accent-2);
+  background: linear-gradient(180deg, rgba(0,0,0,0.25), rgba(255,255,255,0.02));
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  white-space: pre-wrap;
+  overflow: auto;
+}
+
+.ocr-controls .button { padding: 0.6rem 0.9rem; border-radius: 10px }

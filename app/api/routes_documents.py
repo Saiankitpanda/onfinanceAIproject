@@ -1,5 +1,6 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from pydantic import BaseModel
+from typing import List, Dict
 import os
 import uuid
 import json
@@ -23,6 +24,14 @@ OUTPUT_DIR = "outputs"
 class AgentRequest(BaseModel):
     task: str
     question: str | None = None
+
+
+class OcrBlocksResponse(BaseModel):
+    document_id: str
+    filename: str | None = None
+    processing_mode: str
+    total_blocks: int
+    blocks: List[Dict]
 
 
 @router.post("/upload")
@@ -100,6 +109,23 @@ def process_document(document_id: str):
         extraction_mode = "ocr_image"
         blocks = ocr_image_file(file_path)
 
+    # Save raw OCR/text blocks to outputs/{document_id}/ocr_blocks.json
+    ocr_output_path = os.path.join(OUTPUT_DIR, document_id, "ocr_blocks.json")
+    ocr_payload = {
+        "document_id": document_id,
+        "filename": metadata.get("filename"),
+        "processing_mode": extraction_mode,
+        "total_blocks": len(blocks),
+        "blocks": blocks,
+    }
+
+    try:
+        with open(ocr_output_path, "w") as f:
+            json.dump(ocr_payload, f, indent=2)
+    except Exception:
+        # Do not fail the whole processing if saving OCR blocks fails; continue
+        pass
+
     clauses_raw = group_blocks_into_clauses(blocks)
     clauses = enrich_clauses_with_annotations(clauses_raw)
     annotations = build_page_annotations(clauses)
@@ -154,6 +180,26 @@ def get_annotations(document_id: str):
         "document_id": document_id,
         "pages": data.get("pages", [])
     }
+
+
+@router.get("/{document_id}/ocr", response_model=OcrBlocksResponse, summary="Get OCR/text blocks", response_description="Raw OCR/text blocks extracted from the uploaded document")
+def get_ocr_blocks(document_id: str):
+    """Return raw OCR/text blocks saved during processing.
+
+    The response contains the document id, filename, processing mode,
+    total number of blocks and the raw `blocks` array produced by the
+    extractor (PyMuPDF or OCR).
+    """
+    ocr_path = os.path.join(OUTPUT_DIR, document_id, "ocr_blocks.json")
+
+    if not os.path.exists(ocr_path):
+        raise HTTPException(
+            status_code=404,
+            detail="OCR/text blocks not found. Process the document first."
+        )
+
+    with open(ocr_path, "r") as f:
+        return json.load(f)
 
 
 @router.post("/{document_id}/agent")
