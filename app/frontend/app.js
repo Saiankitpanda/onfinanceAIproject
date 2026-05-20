@@ -105,21 +105,25 @@ processButton.addEventListener("click", async () => {
   updateStatus("Processing document. This may take a moment...");
   processButton.disabled = true;
 
-  const response = await fetch(`/documents/${currentDocumentId}/process`, {
-    method: "POST",
-  });
+  try {
+    const response = await fetch(`/documents/${currentDocumentId}/process`, {
+      method: "POST",
+    });
 
-  if (!response.ok) {
-    await handleError(response);
+    if (!response.ok) {
+      await handleError(response);
+    }
+
+    const data = await response.json();
+    updateStatus("Document processed successfully.");
+    displayResult(data);
+    displayClauses(data.clauses);
+    showView("result");
+    agentPanel.hidden = false;
+    if (ocrPanel) ocrPanel.hidden = false;
+  } finally {
+    processButton.disabled = false;
   }
-
-  const data = await response.json();
-  updateStatus("Document processed successfully.");
-  displayResult(data);
-  displayClauses(data.clauses);
-  showView("result");
-  agentPanel.hidden = false;
-  if (ocrPanel) ocrPanel.hidden = false;
 });
 
 agentForm.addEventListener("submit", async (event) => {
