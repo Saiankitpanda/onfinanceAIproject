@@ -2,6 +2,8 @@
 
 ClauseMark is a small document analysis app built with FastAPI and a frontend served directly by the backend. It lets you upload a PDF or image, extract text and clauses, and query the processed document using an intelligent agent.
 
+> **Iteration 2:** This version includes a Linux-style frontend UI, raw OCR block output, an OCR preview panel, and improved architecture documentation for easier understanding.
+
 ## What it does
 
 - Serves a frontend at `/`
