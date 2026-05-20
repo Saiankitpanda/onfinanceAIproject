@@ -67,9 +67,9 @@ def get_readiness():
             "openai_api_key": {
                 "available": openai_ready,
                 "message": (
-                    "Agent features are available."
+                    "Cloud-backed agent responses are available."
                     if openai_ready
-                    else "Set OPENAI_API_KEY in .env to enable agent responses."
+                    else "Local fallback agent is available. Set OPENAI_API_KEY in .env to enable cloud responses."
                 ),
             },
         },
@@ -341,7 +341,7 @@ def get_ocr_blocks(document_id: str):
 
 @router.post("/{document_id}/agent")
 @limiter.limit(RATE_LIMIT_AGENT)
-def ask_agent(document_id: str, request: AgentRequest):
+def ask_agent(request: Request, document_id: str, body: AgentRequest):
     output_path = os.path.join(OUTPUT_DIR, document_id, "clauses.json")
 
     if not os.path.exists(output_path):
@@ -362,9 +362,9 @@ def ask_agent(document_id: str, request: AgentRequest):
 
     try:
         answer = run_clause_agent(
-            task=request.task,
+            task=body.task,
             clauses=clauses,
-            question=request.question,
+            question=body.question,
         )
         agent_status = "ok"
         # Agent helper returns friendly messages on missing API key or package
@@ -381,15 +381,15 @@ def ask_agent(document_id: str, request: AgentRequest):
             "Agent invocation failed",
             extra={
                 "document_id": document_id,
-                "task": request.task,
+                "task": body.task,
                 "error": str(error),
             },
         )
 
     return {
         "document_id": document_id,
-        "task": request.task,
-        "question": request.question,
+        "task": body.task,
+        "question": body.question,
         "answer": answer,
         "agent_status": agent_status,
     }

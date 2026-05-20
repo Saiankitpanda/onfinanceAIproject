@@ -34,7 +34,7 @@ https://excalidraw.com/#json=4ITHogBISZRVJ7GOkfvp8,ly9uhQDqssK-6cdd8N-0og
 
 - Python 3.10+
 - [Tesseract OCR](https://github.com/tesseract-ocr/tesseract) installed for OCR support
-- `OPENAI_API_KEY` set in `.env` to use the agent functionality
+- `OPENAI_API_KEY` optionally set in `.env` to enable cloud-backed agent responses
 
 ## Install
 
@@ -94,5 +94,5 @@ http://127.0.0.1:8000/
 
 - The app stores uploaded files in `uploads/` and results in `outputs/`.
 - These folders are ignored by `.gitignore`.
-- If you do not set `OPENAI_API_KEY`, agent queries will not work, but upload/process features still run.
+- If you do not set `OPENAI_API_KEY`, the agent uses a local fallback so queries still work.
 - If you're on a machine without Tesseract installed, OCR-based processing will fail for scanned PDFs and images.

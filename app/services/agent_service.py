@@ -1,6 +1,8 @@
 import logging
 import os
+import re
 import time
+from typing import Iterable
 
 from dotenv import load_dotenv
 
@@ -88,27 +90,248 @@ Return practical debugging suggestions.
     return instructions.get(task, instructions["answer_question"])
 
 
+def _clause_label(clause: dict) -> str:
+    clause_id = clause.get("clause_id") or "unknown"
+    clause_type = clause.get("clause_type") or "clause"
+    return f"Clause {clause_id} ({clause_type})"
+
+
+def _truncate(text: str, limit: int = 180) -> str:
+    text = re.sub(r"\s+", " ", (text or "")).strip()
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3].rstrip() + "..."
+
+
+def _extract_sentences(text: str) -> list[str]:
+    if not text:
+        return []
+    parts = re.split(r"(?<=[.!?])\s+", text.strip())
+    return [part.strip() for part in parts if part.strip()]
+
+
+def _normalize_words(text: str) -> set[str]:
+    stop_words = {
+        "the",
+        "and",
+        "for",
+        "with",
+        "that",
+        "this",
+        "from",
+        "into",
+        "shall",
+        "must",
+        "will",
+        "may",
+        "are",
+        "is",
+        "be",
+        "to",
+        "of",
+        "a",
+        "an",
+        "in",
+        "on",
+        "by",
+        "or",
+        "as",
+        "at",
+        "it",
+        "its",
+        "their",
+        "your",
+        "what",
+        "which",
+        "who",
+        "when",
+        "where",
+        "why",
+        "how",
+        "please",
+        "do",
+        "does",
+        "did",
+    }
+    tokens = re.findall(r"[a-z0-9]+", (text or "").lower())
+    return {token for token in tokens if token not in stop_words}
+
+
+def _find_relevant_clauses(question: str, clauses: list) -> list[dict]:
+    question_words = _normalize_words(question)
+    if not question_words:
+        return clauses[:3]
+
+    matched = []
+    for clause in clauses:
+        clause_words = _normalize_words(clause.get("text", ""))
+        score = len(question_words & clause_words)
+        if score > 0:
+            matched.append((score, clause))
+
+    matched.sort(key=lambda item: (-item[0], item[1].get("page_start", 0)))
+    return [clause for _, clause in matched][:3]
+
+
+def _format_clause_summary(clauses: Iterable[dict]) -> str:
+    lines = []
+    for clause in clauses:
+        lines.append(f"- {_clause_label(clause)}: {_truncate(clause.get('text', ''), 160)}")
+    return "\n".join(lines)
+
+
+def _build_local_summary(clauses: list) -> str:
+    selected = clauses[:5]
+    return (
+        "Local agent summary:\n"
+        f"{_format_clause_summary(selected)}\n"
+        "\nThis answer was generated locally because the cloud model was not used."
+    )
+
+
+def _build_local_explanation(clauses: list, question: str | None) -> str:
+    if not clauses:
+        return "The provided clauses do not contain enough information."
+
+    target = question.strip() if question else ""
+    relevant = _find_relevant_clauses(target, clauses) if target else clauses[:2]
+    return (
+        "Local explanation:\n"
+        f"{_format_clause_summary(relevant)}\n"
+        "\nIf you want a deeper answer, upload a cleaner clause split or ask a narrower question."
+    )
+
+
+def _build_local_question_answer(clauses: list, question: str | None) -> str:
+    question_text = (question or "").strip()
+    if not question_text:
+        return _build_local_summary(clauses)
+
+    relevant = _find_relevant_clauses(question_text, clauses)
+    if not relevant:
+        return "The provided clauses do not contain enough information."
+
+    return (
+        "Local answer based on the matching clauses:\n"
+        f"{_format_clause_summary(relevant)}\n"
+        f"\nQuestion understood: {question_text}"
+    )
+
+
+def _build_obligations(clauses: list) -> str:
+    obligation_keywords = ("shall", "must", "required", "need to", "needs to", "should")
+    findings = []
+
+    for clause in clauses:
+        text = clause.get("text", "")
+        for sentence in _extract_sentences(text):
+            if any(keyword in sentence.lower() for keyword in obligation_keywords):
+                findings.append(
+                    f"- {_clause_label(clause)}: {_truncate(sentence, 180)}"
+                )
+
+    if not findings:
+        return "No explicit obligations were found in the provided clauses."
+
+    return "Extracted obligations:\n" + "\n".join(findings)
+
+
+def _build_deadlines(clauses: list) -> str:
+    deadline_patterns = [
+        r"\b\d{1,2}\s+[A-Za-z]+\s+\d{4}\b",
+        r"\b\d{1,2}/\d{1,2}/\d{2,4}\b",
+        r"\bwithin\s+\d+\s+(?:days|business days|working days|weeks|months)\b",
+        r"\bby\s+\d{1,2}\s+[A-Za-z]+\s+\d{4}\b",
+    ]
+    findings = []
+
+    for clause in clauses:
+        text = clause.get("text", "")
+        lower_text = text.lower()
+        for pattern in deadline_patterns:
+            for match in re.finditer(pattern, lower_text, re.IGNORECASE):
+                snippet = text[max(0, match.start() - 40) : match.end() + 60]
+                findings.append(f"- {_clause_label(clause)}: {_truncate(snippet, 180)}")
+
+    if not findings:
+        return "No explicit deadlines or dates were found in the provided clauses."
+
+    return "Extracted deadlines:\n" + "\n".join(findings)
+
+
+def _build_penalties(clauses: list) -> str:
+    penalty_keywords = ("penalty", "fine", "sanction", "consequence", "non-compliance", "non compliance")
+    findings = []
+
+    for clause in clauses:
+        for sentence in _extract_sentences(clause.get("text", "")):
+            if any(keyword in sentence.lower() for keyword in penalty_keywords):
+                findings.append(
+                    f"- {_clause_label(clause)}: {_truncate(sentence, 180)}"
+                )
+
+    if not findings:
+        return "No explicit penalties or consequences were found in the provided clauses."
+
+    return "Extracted penalties:\n" + "\n".join(findings)
+
+
+def _build_validation_notes(clauses: list) -> str:
+    notes = [f"Detected {len(clauses)} clause(s)."]
+
+    long_clauses = [c for c in clauses if len((c.get("text") or "").split()) > 220]
+    short_clauses = [c for c in clauses if len((c.get("text") or "").split()) < 8]
+
+    if long_clauses:
+        notes.append(
+            "Possible merged clauses: "
+            + ", ".join(_clause_label(clause) for clause in long_clauses[:5])
+        )
+
+    if short_clauses:
+        notes.append(
+            "Very short clauses: "
+            + ", ".join(_clause_label(clause) for clause in short_clauses[:5])
+        )
+
+    if not long_clauses and not short_clauses:
+        notes.append("Clause lengths look broadly reasonable.")
+
+    return "\n".join(f"- {note}" for note in notes)
+
+
+def _local_agent_response(task: str, clauses: list, question: str | None) -> str:
+    normalized_task = task.lower().strip()
+
+    if normalized_task == "summarize":
+        return _build_local_summary(clauses)
+    if normalized_task == "explain":
+        return _build_local_explanation(clauses, question)
+    if normalized_task == "answer_question":
+        return _build_local_question_answer(clauses, question)
+    if normalized_task == "extract_obligations":
+        return _build_obligations(clauses)
+    if normalized_task == "extract_deadlines":
+        return _build_deadlines(clauses)
+    if normalized_task == "extract_penalties":
+        return _build_penalties(clauses)
+    if normalized_task == "validate_clause_boundaries":
+        return _build_validation_notes(clauses)
+
+    return _build_local_question_answer(clauses, question)
+
+
 def run_clause_agent(task: str, clauses: list, question: str | None = None) -> str:
-    api_key = os.getenv("OPENAI_API_KEY")
-
-    if not api_key:
-        return "OPENAI_API_KEY is missing. Add it in your .env file to use the agent."
-
-    try:
-        from openai import OpenAI
-    except ModuleNotFoundError:
-        return "OpenAI package is not installed. Run: pip install openai"
-
     if not clauses:
         return "No clauses were provided to the agent."
 
-    try:
-        client = OpenAI(api_key=api_key)
+    api_key = os.getenv("OPENAI_API_KEY")
+    use_cloud_model = bool(api_key) and os.getenv("AGENT_USE_OPENAI", "0") == "1"
 
-        clause_context = build_clause_context(clauses)
-        task_instruction = get_task_instruction(task)
+    clause_context = build_clause_context(clauses)
+    task_instruction = get_task_instruction(task)
 
-        system_prompt = """
+    system_prompt = """
 You are Clause Analysis Agent.
 
 You analyze extracted clauses from circulars, legal documents, regulatory notices, and scanned PDFs.
@@ -124,7 +347,7 @@ Strict rules:
 7. Keep the answer clear, structured, and easy to understand.
 """
 
-        user_prompt = f"""
+    user_prompt = f"""
 Task:
 {task}
 
@@ -138,33 +361,50 @@ Extracted Clauses:
 {clause_context}
 """
 
-        # Retry/backoff loop for transient failures
-        max_retries = int(os.getenv("AGENT_MAX_RETRIES", "2"))
-        backoff_base = float(os.getenv("AGENT_BACKOFF_BASE", "1"))
-
-        last_exc = None
-        for attempt in range(1, max_retries + 2):
+    if use_cloud_model:
+        try:
+            from openai import OpenAI
+        except ModuleNotFoundError:
+            logger.warning("OpenAI package not installed; using local agent fallback.")
+        else:
             try:
-                response = client.responses.create(
-                    model="gpt-4.1-mini",
-                    input=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                )
-                return response.output_text
+                client = OpenAI(api_key=api_key)
+                max_retries = int(os.getenv("AGENT_MAX_RETRIES", "2"))
+                backoff_base = float(os.getenv("AGENT_BACKOFF_BASE", "1"))
+                last_exc = None
+
+                for attempt in range(1, max_retries + 2):
+                    try:
+                        response = client.responses.create(
+                            model="gpt-4.1-mini",
+                            input=[
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": user_prompt},
+                            ],
+                        )
+                        output_text = getattr(response, "output_text", "").strip()
+                        if output_text:
+                            return output_text
+                        logger.warning(
+                            "OpenAI response was empty; falling back to local agent."
+                        )
+                        break
+                    except Exception as error:
+                        last_exc = error
+                        logger.exception(
+                            "Agent call failed on attempt %s", attempt, extra={"task": task}
+                        )
+                        if attempt <= max_retries:
+                            time.sleep(backoff_base * (2 ** (attempt - 1)))
+                            continue
+                        logger.warning(
+                            "OpenAI call failed after retries; using local fallback."
+                        )
+                        break
+
+                if last_exc:
+                    logger.info("OpenAI fallback reason: %s", last_exc)
             except Exception as error:
-                last_exc = error
-                # Log and decide whether to retry
-                logger.exception(
-                    "Agent call failed on attempt %s", attempt, extra={"task": task}
-                )
-                if attempt <= max_retries:
-                    sleep_time = backoff_base * (2 ** (attempt - 1))
-                    time.sleep(sleep_time)
-                    continue
-                else:
-                    return f"Agent failed gracefully after retries: {str(last_exc)}"
-    except Exception as error:
-        logger.exception("Agent setup failed", extra={"error": str(error)})
-        return f"Agent failed gracefully: {str(error)}"
+                logger.exception("Agent setup failed", extra={"error": str(error)})
+
+    return _local_agent_response(task, clauses, question)
