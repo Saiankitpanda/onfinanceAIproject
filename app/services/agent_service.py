@@ -97,12 +97,13 @@ def run_clause_agent(task: str, clauses: list, question: str | None = None) -> s
     if not clauses:
         return "No clauses were provided to the agent."
 
-    client = OpenAI(api_key=api_key)
+    try:
+        client = OpenAI(api_key=api_key)
 
-    clause_context = build_clause_context(clauses)
-    task_instruction = get_task_instruction(task)
+        clause_context = build_clause_context(clauses)
+        task_instruction = get_task_instruction(task)
 
-    system_prompt = """
+        system_prompt = """
 You are Clause Analysis Agent.
 
 You analyze extracted clauses from circulars, legal documents, regulatory notices, and scanned PDFs.
@@ -118,7 +119,7 @@ Strict rules:
 7. Keep the answer clear, structured, and easy to understand.
 """
 
-    user_prompt = f"""
+        user_prompt = f"""
 Task:
 {task}
 
@@ -132,18 +133,20 @@ Extracted Clauses:
 {clause_context}
 """
 
-    response = client.responses.create(
-        model="gpt-4.1-mini",
-        input=[
-            {
-                "role": "system",
-                "content": system_prompt
-            },
-            {
-                "role": "user",
-                "content": user_prompt
-            }
-        ]
-    )
+        response = client.responses.create(
+            model="gpt-4.1-mini",
+            input=[
+                {
+                    "role": "system",
+                    "content": system_prompt
+                },
+                {
+                    "role": "user",
+                    "content": user_prompt
+                }
+            ]
+        )
 
-    return response.output_text
+        return response.output_text
+    except Exception as error:
+        return f"Agent failed gracefully: {str(error)}"

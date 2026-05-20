@@ -15,6 +15,25 @@ const readinessStatus = document.getElementById("readiness-status");
 
 let currentDocumentId = null;
 
+const clearElement = (element) => {
+  if (element) element.replaceChildren();
+};
+
+const appendField = (container, label, value) => {
+  const row = document.createElement("div");
+  const labelNode = document.createElement("strong");
+  labelNode.textContent = `${label}: `;
+  row.append(labelNode, document.createTextNode(String(value ?? "")));
+  container.appendChild(row);
+};
+
+const appendMutedText = (container, text) => {
+  const row = document.createElement("div");
+  row.className = "muted inline-note";
+  row.textContent = text;
+  container.appendChild(row);
+};
+
 const updateStatus = (message, type = "info") => {
   uploadStatus.textContent = message;
   uploadStatus.style.color = type === "danger" ? "#f97316" : "#cbd5e1";
@@ -63,12 +82,11 @@ uploadForm.addEventListener("submit", async (event) => {
   currentDocumentId = data.document_id;
   processButton.disabled = false;
   updateStatus(`Uploaded as ${data.filename}. Ready to process.`);
-  resultSummary.innerHTML = `
-    <div><strong>Document:</strong> ${data.filename}</div>
-    <div><strong>Status:</strong> uploaded</div>
-    <div><strong>Document ID:</strong> ${data.document_id}</div>
-    <div class="muted" style="margin-top:10px">Next: open Upload and click Process document.</div>
-  `;
+  clearElement(resultSummary);
+  appendField(resultSummary, "Document", data.filename);
+  appendField(resultSummary, "Status", "uploaded");
+  appendField(resultSummary, "Document ID", data.document_id);
+  appendMutedText(resultSummary, "Next: open Upload and click Process document.");
   showView("result");
 });
 
@@ -134,31 +152,37 @@ agentForm.addEventListener("submit", async (event) => {
 });
 
 const displayResult = (data) => {
-  resultSummary.innerHTML = `
-    <div><strong>Document:</strong> ${data.filename}</div>
-    <div><strong>Status:</strong> ${data.status}</div>
-    <div><strong>Mode:</strong> ${data.processing_mode}</div>
-    <div><strong>Blocks:</strong> ${data.total_blocks}</div>
-    <div><strong>Clauses:</strong> ${data.total_clauses}</div>
-  `;
+  clearElement(resultSummary);
+  appendField(resultSummary, "Document", data.filename);
+  appendField(resultSummary, "Status", data.status);
+  appendField(resultSummary, "Mode", data.processing_mode);
+  appendField(resultSummary, "Blocks", data.total_blocks);
+  appendField(resultSummary, "Clauses", data.total_clauses);
 };
 
 const displayClauses = (clauses) => {
-  clauseList.innerHTML = "";
+  clearElement(clauseList);
   clausesPanel.hidden = false;
 
   if (!clauses.length) {
-    clauseList.innerHTML = "<div class=\"status-card\">No clauses were found.</div>";
+    const empty = document.createElement("div");
+    empty.className = "status-card";
+    empty.textContent = "No clauses were found.";
+    clauseList.appendChild(empty);
     return;
   }
 
   clauses.forEach((clause) => {
     const card = document.createElement("div");
     card.className = "clause-card";
-    card.innerHTML = `
-      <h3>${clause.clause_id || "No ID"} · ${clause.clause_type}</h3>
-      <p>${clause.text}</p>
-    `;
+
+    const heading = document.createElement("h3");
+    heading.textContent = `${clause.clause_id || "No ID"} - ${clause.clause_type}`;
+
+    const text = document.createElement("p");
+    text.textContent = clause.text || "";
+
+    card.append(heading, text);
     clauseList.appendChild(card);
   });
 };
@@ -200,19 +224,56 @@ const loadReadiness = async () => {
     const tesseract = data.checks.tesseract;
     const openai = data.checks.openai_api_key;
 
-    readinessStatus.innerHTML = `
-      <div><strong>OCR:</strong> ${tesseract.message}</div>
-      <div><strong>Tesseract:</strong> ${tesseract.available ? tesseract.path : "Not found"}</div>
-      <div><strong>Agent:</strong> ${openai.message}</div>
-    `;
+    clearElement(readinessStatus);
+    appendField(readinessStatus, "OCR", tesseract.message);
+    appendField(readinessStatus, "Tesseract", tesseract.available ? tesseract.path : "Not found");
+    appendField(readinessStatus, "Agent", openai.message);
   } catch (error) {
     readinessStatus.textContent = "Unable to load readiness checks.";
   }
 };
 
+const loadOcrBlocks = async () => {
+  if (!currentDocumentId) {
+    updateStatus("Process a document first.", "danger");
+    return;
+  }
+
+  updateStatus("Loading OCR blocks...");
+
+  const resp = await fetch(`/documents/${currentDocumentId}/ocr`);
+  if (!resp.ok) {
+    try {
+      await handleError(resp);
+    } catch (err) {
+      // already handled
+    }
+    return;
+  }
+
+  const data = await resp.json();
+  if (ocrOutput) ocrOutput.textContent = JSON.stringify(data, null, 2);
+  updateStatus("OCR blocks loaded.");
+
+  if (ocrDownload) {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    ocrDownload.href = url;
+    ocrDownload.download = `${currentDocumentId}_ocr_blocks.json`;
+    ocrDownload.hidden = false;
+  }
+};
+
 const initNavigation = () => {
   document.querySelectorAll(".nav-item").forEach((button) => {
-    button.addEventListener("click", () => showView(button.dataset.target));
+    button.addEventListener("click", async () => {
+      const target = button.dataset.target;
+      showView(target);
+
+      if (target === "ocr") {
+        await loadOcrBlocks();
+      }
+    });
   });
 };
 
@@ -228,35 +289,5 @@ init();
 
 // OCR panel: load OCR blocks and show JSON
 if (ocrButton) {
-  ocrButton.addEventListener("click", async () => {
-    if (!currentDocumentId) {
-      updateStatus("Process a document first.", "danger");
-      return;
-    }
-
-    updateStatus("Loading OCR blocks...");
-
-    const resp = await fetch(`/documents/${currentDocumentId}/ocr`);
-    if (!resp.ok) {
-      try {
-        await handleError(resp);
-      } catch (err) {
-        // already handled
-      }
-      return;
-    }
-
-    const data = await resp.json();
-    if (ocrOutput) ocrOutput.textContent = JSON.stringify(data, null, 2);
-    updateStatus("OCR blocks loaded.");
-
-    // enable download link
-    if (ocrDownload) {
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      ocrDownload.href = url;
-      ocrDownload.download = `${currentDocumentId}_ocr_blocks.json`;
-      ocrDownload.hidden = false;
-    }
-  });
+  ocrButton.addEventListener("click", loadOcrBlocks);
 }

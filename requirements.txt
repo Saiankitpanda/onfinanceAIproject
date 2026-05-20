@@ -7,6 +7,5 @@ pillow
 opencv-python
 python-dotenv
 openai
-python-dotenv
-openai
-
+pytest
+httpx

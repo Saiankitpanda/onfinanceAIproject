@@ -14,6 +14,7 @@ from app.services.annotation_service import (
     build_page_annotations
 )
 from app.services.agent_service import run_clause_agent
+from app.utils.file_utils import sanitize_filename
 
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -75,7 +76,7 @@ def get_readiness():
 async def upload_document(file: UploadFile = File(...)):
     allowed_extensions = [".pdf", ".png", ".jpg", ".jpeg", ".tiff"]
 
-    filename = file.filename
+    filename = sanitize_filename(file.filename)
     extension = os.path.splitext(filename)[1].lower()
 
     if extension not in allowed_extensions:
@@ -135,16 +136,22 @@ def process_document(document_id: str):
             detail="Uploaded file not found"
         )
 
-    if file_type == ".pdf":
-        if is_text_pdf(file_path):
-            extraction_mode = "pdf_text"
-            blocks = extract_text_blocks_from_pdf(file_path)
+    try:
+        if file_type == ".pdf":
+            if is_text_pdf(file_path):
+                extraction_mode = "pdf_text"
+                blocks = extract_text_blocks_from_pdf(file_path)
+            else:
+                extraction_mode = "ocr_pdf"
+                blocks = ocr_pdf_file(file_path)
         else:
-            extraction_mode = "ocr_pdf"
-            blocks = ocr_pdf_file(file_path)
-    else:
-        extraction_mode = "ocr_image"
-        blocks = ocr_image_file(file_path)
+            extraction_mode = "ocr_image"
+            blocks = ocr_image_file(file_path)
+    except Exception as error:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Document extraction failed: {str(error)}"
+        ) from error
 
     # Save raw OCR/text blocks to outputs/{document_id}/ocr_blocks.json
     ocr_output_path = os.path.join(OUTPUT_DIR, document_id, "ocr_blocks.json")
@@ -163,9 +170,15 @@ def process_document(document_id: str):
         # Do not fail the whole processing if saving OCR blocks fails; continue
         pass
 
-    clauses_raw = group_blocks_into_clauses(blocks)
-    clauses = enrich_clauses_with_annotations(clauses_raw)
-    annotations = build_page_annotations(clauses)
+    try:
+        clauses_raw = group_blocks_into_clauses(blocks)
+        clauses = enrich_clauses_with_annotations(clauses_raw)
+        annotations = build_page_annotations(clauses)
+    except Exception as error:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Clause processing failed: {str(error)}"
+        ) from error
 
     result = {
         "document_id": document_id,
