@@ -2,6 +2,7 @@ from fastapi import APIRouter, UploadFile, File, HTTPException
 from pydantic import BaseModel
 from typing import List, Dict
 import os
+import shutil
 import uuid
 import json
 
@@ -32,6 +33,42 @@ class OcrBlocksResponse(BaseModel):
     processing_mode: str
     total_blocks: int
     blocks: List[Dict]
+
+
+@router.get("/readiness")
+def get_readiness():
+    tesseract_path = shutil.which("tesseract")
+    openai_ready = bool(os.getenv("OPENAI_API_KEY"))
+
+    return {
+        "status": "ready" if tesseract_path else "partial",
+        "checks": {
+            "tesseract": {
+                "available": bool(tesseract_path),
+                "path": tesseract_path,
+                "message": (
+                    "OCR is available for scanned PDFs and images."
+                    if tesseract_path
+                    else "Install Tesseract OCR before processing scanned PDFs or images."
+                ),
+            },
+            "openai_api_key": {
+                "available": openai_ready,
+                "message": (
+                    "Agent features are available."
+                    if openai_ready
+                    else "Set OPENAI_API_KEY in .env to enable agent responses."
+                ),
+            },
+        },
+        "demo_flow": [
+            "Upload a clean RBI or legal-style PDF with numbered clauses.",
+            "Click Process document and confirm the extraction mode, block count, and clause count.",
+            "Open Clauses to show structured clause extraction.",
+            "Open OCR to show the raw text blocks used by the pipeline.",
+            "Ask the agent to summarize obligations, deadlines, or penalties.",
+        ],
+    }
 
 
 @router.post("/upload")

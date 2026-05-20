@@ -15,16 +15,18 @@
             <span class="dot dot-min" title="Minimize"></span>
             <span class="dot dot-max" title="Maximize"></span>
           </div>
-          <div class="app-icon"></div>
-          <div class="title">ClauseMark — Document Analyzer</div>
+          <div class="app-icon" aria-hidden="true"></div>
+          <div class="title">ClauseMark AI</div>
         </div>
-        <div class="title-right">Linux · Local</div>
+        <div class="title-right">Arch Workbench · localhost · FastAPI · OCR</div>
       </div>
 
       <div class="layout">
         <aside class="sidebar">
-          <div class="brand">ClauseMark</div>
+          <div class="brand">ClauseMark AI</div>
+          <div class="sidebar-label">Arch Linux style UI</div>
           <nav>
+            <button class="nav-item" data-target="demo">Demo</button>
             <button class="nav-item" data-target="upload">Upload</button>
             <button class="nav-item" data-target="result">Result</button>
             <button class="nav-item" data-target="clauses">Clauses</button>
@@ -36,11 +38,37 @@
 
         <main class="page-shell">
           <section class="panel hero">
-            <h1>ClauseMark</h1>
-            <p class="muted">Upload PDF/images, extract clauses, and query with an intelligent agent.</p>
+            <h1>ClauseMark AI</h1>
+            <p class="muted">OCR, clause demarcation, and document Q&A in a Linux workbench UI.</p>
           </section>
 
-          <section id="view-upload" class="content-grid">
+          <section id="view-demo" class="content-grid">
+            <div class="panel card">
+              <h2>Demo flow</h2>
+              <ol class="demo-list">
+                <li>Upload a clean RBI or legal-style PDF with numbered clauses.</li>
+                <li>Process the document and show extraction mode, blocks, and clauses.</li>
+                <li>Open Clauses to show structured clause-level output.</li>
+                <li>Open OCR to show raw text blocks used by the pipeline.</li>
+                <li>Ask the agent for obligations, deadlines, penalties, or a short summary.</li>
+              </ol>
+            </div>
+
+            <div class="panel card">
+              <h2>System readiness</h2>
+              <div id="readiness-status" class="result-card">Checking OCR and agent readiness...</div>
+            </div>
+
+            <div class="panel card terminal-card">
+              <h2>Linux run commands</h2>
+              <pre class="terminal-output"><span class="prompt">$</span> source venv/bin/activate
+<span class="prompt">$</span> uvicorn app.main:app --reload --port 8000
+<span class="prompt">$</span> tesseract --version
+<span class="prompt">$</span> curl http://127.0.0.1:8000/health</pre>
+            </div>
+          </section>
+
+          <section id="view-upload" class="content-grid hidden">
             <div class="panel card">
               <h2>Upload document</h2>
               <form id="upload-form">
@@ -54,7 +82,9 @@
               <div id="upload-status" class="status-card"></div>
               <button id="process-button" class="button secondary" disabled>Process document</button>
             </div>
+          </section>
 
+          <section id="view-result" class="content-grid hidden">
             <div class="panel card">
               <h2>Document result</h2>
               <div id="result-summary" class="result-card">Upload and process a document to begin.</div>
@@ -100,19 +130,5 @@
     </div>
 
     <script src="/static/app.js"></script>
-
-    <script>
-      // Simple nav to toggle views (keeps existing IDs intact)
-      document.querySelectorAll('.nav-item').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          const t = btn.dataset.target;
-          document.querySelectorAll('#view-upload, #view-clauses, #view-agent').forEach(el => el.classList.add('hidden'));
-          if (t === 'upload') document.getElementById('view-upload').classList.remove('hidden');
-          if (t === 'result') document.getElementById('view-upload').classList.remove('hidden');
-          if (t === 'clauses') document.getElementById('view-clauses').classList.remove('hidden');
-          if (t === 'agent') document.getElementById('view-agent').classList.remove('hidden');
-        });
-      });
-    </script>
   </body>
 </html>

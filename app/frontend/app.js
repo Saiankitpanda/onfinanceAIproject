@@ -11,6 +11,7 @@ const ocrPanel = document.getElementById("ocr-panel");
 const ocrButton = document.getElementById("ocr-button");
 const ocrOutput = document.getElementById("ocr-output");
 const ocrDownload = document.getElementById("ocr-download");
+const readinessStatus = document.getElementById("readiness-status");
 
 let currentDocumentId = null;
 
@@ -62,7 +63,13 @@ uploadForm.addEventListener("submit", async (event) => {
   currentDocumentId = data.document_id;
   processButton.disabled = false;
   updateStatus(`Uploaded as ${data.filename}. Ready to process.`);
-  resultSummary.textContent = "Click Process document to analyze clauses.";
+  resultSummary.innerHTML = `
+    <div><strong>Document:</strong> ${data.filename}</div>
+    <div><strong>Status:</strong> uploaded</div>
+    <div><strong>Document ID:</strong> ${data.document_id}</div>
+    <div class="muted" style="margin-top:10px">Next: open Upload and click Process document.</div>
+  `;
+  showView("result");
 });
 
 processButton.addEventListener("click", async () => {
@@ -86,6 +93,7 @@ processButton.addEventListener("click", async () => {
   updateStatus("Document processed successfully.");
   displayResult(data);
   displayClauses(data.clauses);
+  showView("result");
   agentPanel.hidden = false;
   if (ocrPanel) ocrPanel.hidden = false;
 });
@@ -155,9 +163,65 @@ const displayClauses = (clauses) => {
   });
 };
 
+const showView = (target) => {
+  const views = {
+    upload: document.getElementById("view-upload"),
+    result: document.getElementById("view-result"),
+    clauses: document.getElementById("view-clauses"),
+    agent: document.getElementById("view-agent"),
+    ocr: document.getElementById("view-ocr"),
+    demo: document.getElementById("view-demo"),
+  };
+
+  Object.values(views).forEach((view) => {
+    if (view) view.classList.add("hidden");
+  });
+
+  const selectedView = views[target] || views.upload;
+  selectedView.classList.remove("hidden");
+
+  document.querySelectorAll(".nav-item").forEach((button) => {
+    button.classList.toggle("active", button.dataset.target === target);
+  });
+};
+
+const loadReadiness = async () => {
+  if (!readinessStatus) return;
+
+  try {
+    const response = await fetch("/documents/readiness");
+
+    if (!response.ok) {
+      readinessStatus.textContent = "Unable to load readiness checks.";
+      return;
+    }
+
+    const data = await response.json();
+    const tesseract = data.checks.tesseract;
+    const openai = data.checks.openai_api_key;
+
+    readinessStatus.innerHTML = `
+      <div><strong>OCR:</strong> ${tesseract.message}</div>
+      <div><strong>Tesseract:</strong> ${tesseract.available ? tesseract.path : "Not found"}</div>
+      <div><strong>Agent:</strong> ${openai.message}</div>
+    `;
+  } catch (error) {
+    readinessStatus.textContent = "Unable to load readiness checks.";
+  }
+};
+
+const initNavigation = () => {
+  document.querySelectorAll(".nav-item").forEach((button) => {
+    button.addEventListener("click", () => showView(button.dataset.target));
+  });
+};
+
 const init = () => {
   uploadStatus.textContent = "Select a document to upload and analyze.";
   resultSummary.textContent = "Upload and process a document to begin.";
+  initNavigation();
+  loadReadiness();
+  showView("demo");
 };
 
 init();
