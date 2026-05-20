@@ -1,7 +1,6 @@
 # ClauseMark Backend + Frontend
 
 ![CI](https://github.com/Saiankitpanda/onfinanceAIproject/actions/workflows/ci.yml/badge.svg)
-![Codecov](https://codecov.io/gh/Saiankitpanda/onfinanceAIproject/branch/main/graph/badge.svg)
 
 ClauseMark is a small document analysis app built with FastAPI and a frontend served directly by the backend. It lets you upload a PDF or image, extract text and clauses, and query the processed document using an intelligent agent.
 
