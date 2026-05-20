@@ -4,6 +4,15 @@ from uuid import uuid4
 
 
 def sanitize_filename(filename: str | None) -> str:
+    """
+    Convert uploaded filename into a safe filename.
+
+    Prevents:
+    - path traversal like ../../secret.txt
+    - unsafe symbols
+    - empty filenames
+    """
+
     if not filename:
         return f"upload_{uuid4().hex}"
 

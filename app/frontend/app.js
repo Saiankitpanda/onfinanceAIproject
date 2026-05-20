@@ -53,6 +53,12 @@ const handleError = async (response) => {
   throw new Error(message);
 };
 
+const renderJsonSafely = (elementId, data) => {
+  const element = document.getElementById(elementId);
+  if (!element) return;
+  element.textContent = JSON.stringify(data, null, 2);
+};
+
 uploadForm.addEventListener("submit", async (event) => {
   event.preventDefault();
 
@@ -233,37 +239,6 @@ const loadReadiness = async () => {
   }
 };
 
-const loadOcrBlocks = async () => {
-  if (!currentDocumentId) {
-    updateStatus("Process a document first.", "danger");
-    return;
-  }
-
-  updateStatus("Loading OCR blocks...");
-
-  const resp = await fetch(`/documents/${currentDocumentId}/ocr`);
-  if (!resp.ok) {
-    try {
-      await handleError(resp);
-    } catch (err) {
-      // already handled
-    }
-    return;
-  }
-
-  const data = await resp.json();
-  if (ocrOutput) ocrOutput.textContent = JSON.stringify(data, null, 2);
-  updateStatus("OCR blocks loaded.");
-
-  if (ocrDownload) {
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    ocrDownload.href = url;
-    ocrDownload.download = `${currentDocumentId}_ocr_blocks.json`;
-    ocrDownload.hidden = false;
-  }
-};
-
 const initNavigation = () => {
   document.querySelectorAll(".nav-item").forEach((button) => {
     button.addEventListener("click", async () => {
@@ -287,7 +262,38 @@ const init = () => {
 
 init();
 
-// OCR panel: load OCR blocks and show JSON
+const loadOcrBlocks = async () => {
+  if (!currentDocumentId) {
+    updateStatus("Please upload and process a document first.", "danger");
+    return;
+  }
+
+  updateStatus("Loading OCR blocks...");
+
+  const resp = await fetch(`/documents/${currentDocumentId}/ocr`);
+
+  if (!resp.ok) {
+    try {
+      await handleError(resp);
+    } catch (err) {
+      // Error already displayed
+    }
+    return;
+  }
+
+  const data = await resp.json();
+  renderJsonSafely("ocr-output", data);
+  updateStatus("OCR blocks loaded.");
+
+  if (ocrDownload) {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    ocrDownload.href = url;
+    ocrDownload.download = `${currentDocumentId}_ocr_blocks.json`;
+    ocrDownload.hidden = false;
+  }
+};
+
 if (ocrButton) {
   ocrButton.addEventListener("click", loadOcrBlocks);
 }
