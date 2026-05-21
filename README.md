@@ -32,14 +32,40 @@ https://excalidraw.com/#json=4ITHogBISZRVJ7GOkfvp8,ly9uhQDqssK-6cdd8N-0og
 
 ## Requirements
 
-- Python 3.10+
-- [Tesseract OCR](https://github.com/tesseract-ocr/tesseract) installed for OCR support
+- Python 3.10+ for local development
+- Docker and Docker Compose for the one-command run path
+- [Tesseract OCR](https://github.com/tesseract-ocr/tesseract) installed for OCR support when running locally
 - `OPENAI_API_KEY` optionally set in `.env` to enable cloud-backed agent responses
 
-## Install
+## Quick Start With Docker
+
+Docker is the fastest way to run ClauseMark because it installs Tesseract and the Python runtime inside the container.
 
 ```bash
-cd /home/friday/clausemark-backend
+docker compose up --build
+```
+
+Open the app in a browser:
+
+```text
+http://127.0.0.1:8000/
+```
+
+To enable cloud-backed agent answers, copy the example environment file and set your key before starting Docker:
+
+```bash
+cp env.example .env
+```
+
+```env
+OPENAI_API_KEY=your_openai_api_key_here
+AGENT_USE_OPENAI=1
+```
+
+## Local Install
+
+```bash
+cd clausemark-backend
 python3 -m venv venv
 source venv/bin/activate
 python -m pip install --upgrade pip setuptools wheel
@@ -58,6 +84,7 @@ Then update `.env`:
 
 ```env
 OPENAI_API_KEY=your_openai_api_key_here
+AGENT_USE_OPENAI=1
 ```
 
 ## Run the app
@@ -95,4 +122,4 @@ http://127.0.0.1:8000/
 - The app stores uploaded files in `uploads/` and results in `outputs/`.
 - These folders are ignored by `.gitignore`.
 - If you do not set `OPENAI_API_KEY`, the agent uses a local fallback so queries still work.
-- If you're on a machine without Tesseract installed, OCR-based processing will fail for scanned PDFs and images.
+- If you run locally on a machine without Tesseract installed, OCR-based processing will fail for scanned PDFs and images. The Docker setup includes Tesseract.

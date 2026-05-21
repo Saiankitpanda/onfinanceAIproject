@@ -7,6 +7,7 @@ const clausesPanel = document.getElementById("clauses-panel");
 const agentPanel = document.getElementById("agent-panel");
 const agentForm = document.getElementById("agent-form");
 const agentAnswer = document.getElementById("agent-answer");
+const agentTaskInput = document.getElementById("agent-task");
 const ocrPanel = document.getElementById("ocr-panel");
 const ocrButton = document.getElementById("ocr-button");
 const ocrOutput = document.getElementById("ocr-output");
@@ -14,6 +15,10 @@ const ocrDownload = document.getElementById("ocr-download");
 const readinessStatus = document.getElementById("readiness-status");
 
 let currentDocumentId = null;
+
+if (agentTaskInput) {
+  agentTaskInput.required = false;
+}
 
 const clearElement = (element) => {
   if (element) element.replaceChildren();
@@ -79,6 +84,104 @@ const renderAgentConversation = (question, answer) => {
   clearElement(agentAnswer);
   appendChatBubble(agentAnswer, "user", "You", question || "No question provided.");
   appendChatBubble(agentAnswer, "assistant", "ClauseMark", answer || "No answer returned.");
+};
+
+const createNode = (tagName, className, text) => {
+  const node = document.createElement(tagName);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = String(text ?? "");
+  return node;
+};
+
+const normalizeSeverity = (severity) => {
+  const value = String(severity || "medium").toLowerCase();
+  return ["high", "medium", "low"].includes(value) ? value : "medium";
+};
+
+const normalizeConfidence = (confidence) => {
+  const value = String(confidence || "medium").toLowerCase();
+  return ["high", "medium", "low"].includes(value) ? value : "medium";
+};
+
+const appendConfidence = (container, confidence) => {
+  const normalized = normalizeConfidence(confidence);
+  const badge = createNode(
+    "span",
+    `agent-confidence agent-confidence-${normalized}`,
+    `${normalized} confidence`
+  );
+  container.appendChild(badge);
+};
+
+const appendSourceClauses = (container, sourceClauses) => {
+  const section = createNode("section", "agent-section");
+  section.appendChild(createNode("h3", "agent-section-title", "Source clauses used"));
+
+  if (!sourceClauses?.length) {
+    section.appendChild(createNode("p", "muted", "No specific source clauses were cited."));
+    container.appendChild(section);
+    return;
+  }
+
+  const list = createNode("div", "agent-citation-list");
+  sourceClauses.forEach((source) => {
+    const card = createNode("article", "agent-citation-card");
+    const page = source.page ? ` · Page ${source.page}` : "";
+    card.appendChild(createNode("div", "agent-citation-meta", `Clause ${source.index}${page}`));
+    card.appendChild(createNode("p", "agent-citation-preview", source.preview || ""));
+    list.appendChild(card);
+  });
+
+  section.appendChild(list);
+  container.appendChild(section);
+};
+
+const appendRiskPanel = (container, riskyClauses) => {
+  const section = createNode("section", "agent-section risk-panel");
+  section.appendChild(createNode("h3", "agent-section-title", "Risk review"));
+
+  if (!riskyClauses?.length) {
+    section.appendChild(createNode("div", "risk-empty", "\u2713 No risky clauses detected"));
+    container.appendChild(section);
+    return;
+  }
+
+  riskyClauses.forEach((risk) => {
+    const severity = normalizeSeverity(risk.severity);
+    const card = createNode("article", `risk-card risk-${severity}`);
+
+    const header = createNode("div", "risk-card-header");
+    header.appendChild(createNode("span", `risk-badge risk-badge-${severity}`, severity));
+    header.appendChild(createNode("span", "risk-type", risk.risk_type || "unknown"));
+    header.appendChild(createNode("span", "risk-clause-index", `Clause ${risk.index}`));
+
+    card.appendChild(header);
+    card.appendChild(createNode("p", "risk-reason", risk.reason || ""));
+    card.appendChild(createNode("p", "risk-preview", risk.preview || ""));
+    section.appendChild(card);
+  });
+
+  container.appendChild(section);
+};
+
+const renderStructuredAgentResponse = (question, data) => {
+  if (!agentAnswer) return;
+
+  clearElement(agentAnswer);
+  appendChatBubble(agentAnswer, "user", "You", question || "No question provided.");
+
+  const bubble = createNode("article", "chat-bubble chat-assistant agent-result");
+  const header = createNode("div", "agent-result-header");
+  header.appendChild(createNode("div", "chat-meta", "ClauseMark"));
+  appendConfidence(header, data.confidence);
+
+  const body = createNode("div", "chat-body");
+  renderParagraphBlock(body, data.answer || "No answer returned.");
+  appendSourceClauses(body, data.source_clauses || []);
+  appendRiskPanel(body, data.risky_clauses || []);
+
+  bubble.append(header, body);
+  agentAnswer.appendChild(bubble);
 };
 
 const updateStatus = (message, type = "info") => {
@@ -181,31 +284,37 @@ agentForm.addEventListener("submit", async (event) => {
     return;
   }
 
-  const task = document.getElementById("agent-task").value.trim();
   const question = document.getElementById("agent-question").value.trim();
 
-  if (!task) {
-    updateStatus("Please enter a task for the agent.", "danger");
+  if (!question) {
+    updateStatus("Please enter a question for the agent.", "danger");
     return;
   }
 
   updateStatus("Querying the clause agent...");
+  clearElement(agentAnswer);
+  appendMutedText(agentAnswer, "Analysing document...");
 
-  const response = await fetch(`/documents/${currentDocumentId}/agent`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ task, question }),
-  });
+  try {
+    const response = await fetch(`/documents/${currentDocumentId}/agent`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ question }),
+    });
 
-  if (!response.ok) {
-    await handleError(response);
+    if (!response.ok) {
+      await handleError(response);
+    }
+
+    const data = await response.json();
+    renderStructuredAgentResponse(question, data);
+    updateStatus("Agent response received.");
+  } catch (error) {
+    clearElement(agentAnswer);
+    appendChatBubble(agentAnswer, "assistant", "ClauseMark", error.message || "Agent request failed.");
   }
-
-  const data = await response.json();
-  renderAgentConversation(question, data.answer);
-  updateStatus("Agent response received.");
 });
 
 const displayResult = (data) => {

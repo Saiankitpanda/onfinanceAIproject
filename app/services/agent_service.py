@@ -1,432 +1,252 @@
+"""
+Clause agent service with clause citation and automatic risk flagging.
+
+Public functions:
+- query_agent(question, clauses) -> AnswerResult
+- flag_risky_clauses(clauses) -> list[RiskFlag]
+
+Both functions use the OpenAI v1.x client when OPENAI_API_KEY is set and
+fall back to local keyword-based behavior when it is not.
+"""
+
+import json
 import logging
 import os
 import re
-import time
-from typing import Iterable, List, Optional
+from dataclasses import dataclass, field
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
-logger = logging.getLogger("clausemark.agent_service")
+logger = logging.getLogger(__name__)
 
 
-def build_clause_context(clauses: list) -> str:
-    context = ""
-
-    for clause in clauses:
-        clause_id = clause.get("clause_id", "unknown")
-        clause_type = clause.get("clause_type", "unknown")
-        text = clause.get("text", "")
-        page_start = clause.get("page_start", "unknown")
-        page_end = clause.get("page_end", "unknown")
-
-        context += f"""
-Clause ID: {clause_id}
-Clause Type: {clause_type}
-Page Range: {page_start} to {page_end}
-Text: {text}
----
-"""
-
-    return context.strip()
+@dataclass
+class AnswerResult:
+    answer: str
+    source_clause_indices: list[int] = field(default_factory=list)
+    confidence: str = "medium"
 
 
-def get_task_instruction(task: str) -> str:
-    task = task.lower().strip()
-
-    instructions = {
-        "summarize": """
-Summarize the circular clearly.
-Return 5 to 8 bullet points.
-Mention important clause IDs where relevant.
-""",
-        "explain": """
-Explain the requested clause or clauses in simple language.
-Use beginner-friendly wording.
-Mention the clause ID.
-""",
-        "answer_question": """
-Answer the user's question using only the provided clauses.
-Mention clause IDs wherever possible.
-If the answer is not present, say that the provided clauses do not contain enough information.
-""",
-        "extract_obligations": """
-Extract all obligations from the clauses.
-For each obligation, return:
-- Obligation
-- Responsible party
-- Clause ID
-- Page number if available
-""",
-        "extract_deadlines": """
-Extract all dates, timelines, deadlines, effective dates, due dates, or reporting periods.
-For each item, return:
-- Deadline/date
-- Meaning
-- Related clause ID
-- Page number if available
-""",
-        "extract_penalties": """
-Extract all penalties, consequences, sanctions, fines, or non-compliance actions.
-For each item, return:
-- Penalty/consequence
-- Trigger condition
-- Clause ID
-- Page number if available
-""",
-        "validate_clause_boundaries": """
-Review whether the detected clauses look structurally correct.
-Identify:
-- Possible wrongly merged clauses
-- Possible missing clause IDs
-- Suspiciously long clauses
-- Suspiciously short clauses
-- Formatting issues
-Return practical debugging suggestions.
-""",
-    }
-
-    return instructions.get(task, instructions["answer_question"])
+@dataclass
+class RiskFlag:
+    clause_index: int
+    clause_preview: str
+    risk_type: str
+    severity: str
+    reason: str
 
 
-def _clause_label(clause: dict) -> str:
-    clause_id = clause.get("clause_id") or "unknown"
-    clause_type = clause.get("clause_type") or "clause"
-    return f"Clause {clause_id} ({clause_type})"
+_ANSWER_SYSTEM = """You are a contract analysis assistant.
+You will be given a numbered list of clauses extracted from a document,
+then a user question.
+
+Respond ONLY with a JSON object - no markdown, no preamble - in this exact shape:
+{
+  "answer": "<your answer in plain English>",
+  "source_clause_indices": [<list of 0-based clause indices you used>],
+  "confidence": "<high|medium|low>"
+}
+
+Rules:
+- Base your answer strictly on the provided clauses.
+- If no clause is relevant, return an empty list for source_clause_indices
+  and set confidence to "low".
+- Keep the answer concise (2-4 sentences max).
+- Do not make up information not present in the clauses."""
+
+_RISK_SYSTEM = """You are a contract risk analyst.
+You will be given a numbered list of clauses extracted from a document.
+
+Identify clauses that contain legal or financial risk. Flag only genuine risks -
+do not flag standard boilerplate that poses no unusual risk.
+
+Respond ONLY with a JSON array - no markdown, no preamble - in this exact shape:
+[
+  {
+    "clause_index": <0-based index>,
+    "risk_type": "<short category e.g. indemnity | auto-renewal | liability-waiver | penalty>",
+    "severity": "<high|medium|low>",
+    "reason": "<one sentence explaining the risk>"
+  }
+]
+
+If there are no risky clauses, return an empty array [].
+Severity guide:
+  high   - could result in significant financial loss or legal liability
+  medium - unusual terms worth negotiating
+  low    - standard but worth being aware of"""
 
 
-def _truncate(text: str, limit: int = 180) -> str:
-    text = re.sub(r"\s+", " ", (text or "")).strip()
-    if len(text) <= limit:
-        return text
-    return text[: limit - 3].rstrip() + "..."
-
-
-def _extract_sentences(text: str) -> list[str]:
-    if not text:
-        return []
-    parts = re.split(r"(?<=[.!?])\s+", text.strip())
-    return [part.strip() for part in parts if part.strip()]
-
-
-def _normalize_words(text: str) -> set[str]:
-    stop_words = {
-        "the",
-        "and",
-        "for",
-        "with",
-        "that",
-        "this",
-        "from",
-        "into",
-        "shall",
-        "must",
-        "will",
-        "may",
-        "are",
-        "is",
-        "be",
-        "to",
-        "of",
-        "a",
-        "an",
-        "in",
-        "on",
-        "by",
-        "or",
-        "as",
-        "at",
-        "it",
-        "its",
-        "their",
-        "your",
-        "what",
-        "which",
-        "who",
-        "when",
-        "where",
-        "why",
-        "how",
-        "please",
-        "do",
-        "does",
-        "did",
-    }
-    tokens = re.findall(r"[a-z0-9]+", (text or "").lower())
-    return {token for token in tokens if token not in stop_words}
-
-
-def _find_relevant_clauses(question: str, clauses: List) -> List[dict]:
-    question_words = _normalize_words(question)
-    if not question_words:
-        return clauses[:3]
-
-    matched = []
-    for clause in clauses:
-        clause_words = _normalize_words(clause.get("text", ""))
-        score = len(question_words & clause_words)
-        if score > 0:
-            matched.append((score, clause))
-
-    matched.sort(key=lambda item: (-item[0], item[1].get("page_start", 0)))
-    return [clause for _, clause in matched][:3]
-
-
-def _format_clause_summary(clauses: Iterable[dict]) -> str:
+def _build_clause_list(clauses: list[dict]) -> str:
     lines = []
-    for clause in clauses:
-        lines.append(f"- {_clause_label(clause)}: {_truncate(clause.get('text', ''), 160)}")
-    return "\n".join(lines)
+    for index, clause in enumerate(clauses):
+        text = clause.get("text", "").strip()
+        if text:
+            lines.append(f"[{index}] {text}")
+    return "\n\n".join(lines)
 
 
-def _build_local_summary(clauses: list) -> str:
-    selected = clauses[:5]
-    body = _format_clause_summary(selected)
-    return (
-        f"Local agent summary:\n{body or 'No clause details available.'}\n\n"
-        "Why it matters: this answer is built from the extracted clause text, so you can quickly scan the most important points without needing the cloud model."
+def _call_openai(system: str, user_content: str) -> str:
+    from openai import OpenAI
+
+    client = OpenAI()
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        temperature=0,
+        max_tokens=1024,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user_content},
+        ],
     )
+    return response.choices[0].message.content.strip()
 
 
-def _build_local_explanation(clauses: List, question: Optional[str]) -> str:
-    if not clauses:
-        return "The provided clauses do not contain enough information."
+def _parse_json(raw: str, fallback):
+    cleaned = raw.strip()
+    if cleaned.startswith("```json"):
+        cleaned = cleaned[len("```json"):].strip()
+    elif cleaned.startswith("```"):
+        cleaned = cleaned[len("```"):].strip()
+    if cleaned.endswith("```"):
+        cleaned = cleaned[: -len("```")].strip()
 
-    target = question.strip() if question else ""
-    relevant = _find_relevant_clauses(target, clauses) if target else clauses[:2]
-    explanation = _format_clause_summary(relevant)
-    return (
-        f"Local explanation:\n{explanation or 'No relevant clauses found.'}\n\n"
-        "Why it matters: the answer stays close to the clause text, so you can map each point back to the document and ask a narrower follow-up if needed."
-    )
-
-
-def _build_local_question_answer(clauses: List, question: Optional[str]) -> str:
-    question_text = (question or "").strip()
-    if not question_text:
-        return _build_local_summary(clauses)
-
-    relevant = _find_relevant_clauses(question_text, clauses)
-    if not relevant:
-        return "The provided clauses do not contain enough information."
-
-    answer = _format_clause_summary(relevant)
-    return (
-        f"Answer: {answer or 'No matching clauses were found.'}\n\n"
-        f"Explanation: I matched your question against the closest clauses and surfaced the most relevant lines. Question understood: {question_text}"
-    )
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        logger.warning("JSON parse failed. Raw response: %s", raw[:300])
+        return fallback
 
 
-def _build_obligations(clauses: list) -> str:
-    obligation_keywords = ("shall", "must", "required", "need to", "needs to", "should")
-    findings = []
-
-    for clause in clauses:
-        text = clause.get("text", "")
-        for sentence in _extract_sentences(text):
-            if any(keyword in sentence.lower() for keyword in obligation_keywords):
-                findings.append(
-                    f"- {_clause_label(clause)}: {_truncate(sentence, 180)}"
-                )
-
-    if not findings:
-        return "No explicit obligations were found in the provided clauses."
-
-    return "Extracted obligations:\n" + "\n".join(findings)
-
-
-def _build_deadlines(clauses: list) -> str:
-    deadline_patterns = [
-        r"\b\d{1,2}\s+[A-Za-z]+\s+\d{4}\b",
-        r"\b\d{1,2}/\d{1,2}/\d{2,4}\b",
-        r"\bwithin\s+\d+\s+(?:days|business days|working days|weeks|months)\b",
-        r"\bby\s+\d{1,2}\s+[A-Za-z]+\s+\d{4}\b",
+def _local_answer(question: str, clauses: list[dict]) -> AnswerResult:
+    keywords = [
+        word.lower()
+        for word in re.findall(r"[a-z0-9]+", question, flags=re.IGNORECASE)
+        if len(word) > 3
     ]
-    findings = []
+    for index, clause in enumerate(clauses):
+        text = clause.get("text", "").lower()
+        if any(keyword in text for keyword in keywords):
+            return AnswerResult(
+                answer=(
+                    f"[Local fallback] Clause {index} may be relevant: "
+                    f"{clause.get('text', '')[:200]}"
+                ),
+                source_clause_indices=[index],
+                confidence="low",
+            )
 
-    for clause in clauses:
-        text = clause.get("text", "")
-        lower_text = text.lower()
-        for pattern in deadline_patterns:
-            for match in re.finditer(pattern, lower_text, re.IGNORECASE):
-                snippet = text[max(0, match.start() - 40) : match.end() + 60]
-                findings.append(f"- {_clause_label(clause)}: {_truncate(snippet, 180)}")
-
-    if not findings:
-        return "No explicit deadlines or dates were found in the provided clauses."
-
-    return "Extracted deadlines:\n" + "\n".join(findings)
+    return AnswerResult(
+        answer=(
+            "[Local fallback] No matching clause found. Set OPENAI_API_KEY "
+            "for full agent capability."
+        ),
+        source_clause_indices=[],
+        confidence="low",
+    )
 
 
-def _build_penalties(clauses: list) -> str:
-    penalty_keywords = ("penalty", "fine", "sanction", "consequence", "non-compliance", "non compliance")
-    findings = []
+def _local_risk_flags(clauses: list[dict]) -> list[RiskFlag]:
+    risk_keywords = {
+        "indemnif": ("indemnity", "high"),
+        "auto-renew": ("auto-renewal", "medium"),
+        "automatically renew": ("auto-renewal", "medium"),
+        "liquidated damages": ("penalty", "high"),
+        "waive": ("liability-waiver", "medium"),
+        "arbitration": ("arbitration", "medium"),
+        "irrevocable": ("irrevocable-grant", "high"),
+        "personal data": ("data-sharing", "medium"),
+        "termination for convenience": ("termination", "medium"),
+    }
 
-    for clause in clauses:
-        for sentence in _extract_sentences(clause.get("text", "")):
-            if any(keyword in sentence.lower() for keyword in penalty_keywords):
-                findings.append(
-                    f"- {_clause_label(clause)}: {_truncate(sentence, 180)}"
+    flags = []
+    for index, clause in enumerate(clauses):
+        text = clause.get("text", "").lower()
+        for keyword, (risk_type, severity) in risk_keywords.items():
+            if keyword in text:
+                flags.append(
+                    RiskFlag(
+                        clause_index=index,
+                        clause_preview=clause.get("text", "")[:120],
+                        risk_type=risk_type,
+                        severity=severity,
+                        reason=(
+                            f"[Local] Clause contains '{keyword}' - "
+                            "review recommended."
+                        ),
+                    )
                 )
-
-    if not findings:
-        return "No explicit penalties or consequences were found in the provided clauses."
-
-    return "Extracted penalties:\n" + "\n".join(findings)
+                break
+    return flags
 
 
-def _build_validation_notes(clauses: list) -> str:
-    notes = [f"Detected {len(clauses)} clause(s)."]
-
-    long_clauses = [c for c in clauses if len((c.get("text") or "").split()) > 220]
-    short_clauses = [c for c in clauses if len((c.get("text") or "").split()) < 8]
-
-    if long_clauses:
-        notes.append(
-            "Possible merged clauses: "
-            + ", ".join(_clause_label(clause) for clause in long_clauses[:5])
-        )
-
-    if short_clauses:
-        notes.append(
-            "Very short clauses: "
-            + ", ".join(_clause_label(clause) for clause in short_clauses[:5])
-        )
-
-    if not long_clauses and not short_clauses:
-        notes.append("Clause lengths look broadly reasonable.")
-
-    return "\n".join(f"- {note}" for note in notes)
-
-
-def _local_agent_response(task: str, clauses: List, question: Optional[str]) -> str:
-    normalized_task = task.lower().strip()
-
-    if normalized_task == "summarize":
-        return _build_local_summary(clauses)
-    if normalized_task == "explain":
-        return _build_local_explanation(clauses, question)
-    if normalized_task == "answer_question":
-        return _build_local_question_answer(clauses, question)
-    if normalized_task == "extract_obligations":
-        return _build_obligations(clauses)
-    if normalized_task == "extract_deadlines":
-        return _build_deadlines(clauses)
-    if normalized_task == "extract_penalties":
-        return _build_penalties(clauses)
-    if normalized_task == "validate_clause_boundaries":
-        return _build_validation_notes(clauses)
-
-    return _build_local_question_answer(clauses, question)
-
-
-def _format_cloud_two_paragraph_prompt(task: str, question: Optional[str]) -> str:
-    return f"""
-Respond in exactly 2 short paragraphs separated by a blank line.
-
-Paragraph 1:
-- Give the direct answer first.
-- Keep it concise and easy to scan.
-
-Paragraph 2:
-- Explain the answer in plain language.
-- Mention clause IDs where helpful.
-- If there is not enough information, say:
-"The provided clauses do not contain enough information."
-
-Task: {task}
-Question: {question if question else "No specific question provided."}
-"""
-
-
-def run_clause_agent(task: str, clauses: List, question: Optional[str] = None) -> str:
+def query_agent(question: str, clauses: list[dict]) -> AnswerResult:
     if not clauses:
-        return "No clauses were provided to the agent."
+        return AnswerResult(
+            answer="No clauses have been extracted yet.",
+            source_clause_indices=[],
+            confidence="low",
+        )
 
     api_key = os.getenv("OPENAI_API_KEY")
-    use_cloud_model = bool(api_key) and os.getenv("AGENT_USE_OPENAI", "0") == "1"
+    if not api_key:
+        logger.info("OPENAI_API_KEY not set - using local fallback.")
+        return _local_answer(question, clauses)
 
-    clause_context = build_clause_context(clauses)
-    task_instruction = get_task_instruction(task)
+    clause_block = _build_clause_list(clauses)
+    user_message = f"Clauses:\n{clause_block}\n\nQuestion: {question}"
 
-    system_prompt = """
-You are Clause Analysis Agent.
+    try:
+        raw = _call_openai(_ANSWER_SYSTEM, user_message)
+        data = _parse_json(
+            raw,
+            {"answer": raw, "source_clause_indices": [], "confidence": "low"},
+        )
+        return AnswerResult(
+            answer=data.get("answer", raw),
+            source_clause_indices=[
+                int(index) for index in data.get("source_clause_indices", [])
+            ],
+            confidence=data.get("confidence", "medium"),
+        )
+    except Exception as exc:
+        logger.error("OpenAI query_agent error: %s", exc)
+        return AnswerResult(
+            answer=f"Agent error: {exc}. Try again or check your API key.",
+            source_clause_indices=[],
+            confidence="low",
+        )
 
-You analyze extracted clauses from circulars, legal documents, regulatory notices, and scanned PDFs.
 
-Strict rules:
-1. Use only the clause text provided.
-2. Do not invent clauses.
-3. Do not use outside knowledge.
-4. Do not assume missing information.
-5. Mention clause IDs wherever possible.
-6. If the provided clauses do not contain enough information, say:
-"The provided clauses do not contain enough information."
-7. Keep the answer clear, structured, and easy to understand.
-"""
+def flag_risky_clauses(clauses: list[dict]) -> list[RiskFlag]:
+    if not clauses:
+        return []
 
-    user_prompt = f"""
-Task:
-{task}
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return _local_risk_flags(clauses)
 
-Task Instruction:
-{task_instruction}
+    clause_block = _build_clause_list(clauses)
 
-User Question:
-{question if question else "No specific question provided."}
-
-Extracted Clauses:
-{clause_context}
-
-Formatting Reminder:
-{_format_cloud_two_paragraph_prompt(task, question)}
-"""
-
-    if use_cloud_model:
-        try:
-            from openai import OpenAI
-        except ModuleNotFoundError:
-            logger.warning("OpenAI package not installed; using local agent fallback.")
-        else:
-            try:
-                client = OpenAI(api_key=api_key)
-                max_retries = int(os.getenv("AGENT_MAX_RETRIES", "2"))
-                backoff_base = float(os.getenv("AGENT_BACKOFF_BASE", "1"))
-                last_exc = None
-
-                for attempt in range(1, max_retries + 2):
-                    try:
-                        response = client.responses.create(
-                            model="gpt-4.1-mini",
-                            input=[
-                                {"role": "system", "content": system_prompt},
-                                {"role": "user", "content": user_prompt},
-                            ],
-                        )
-                        output_text = getattr(response, "output_text", "").strip()
-                        if output_text:
-                            return output_text
-                        logger.warning(
-                            "OpenAI response was empty; falling back to local agent."
-                        )
-                        break
-                    except Exception as error:
-                        last_exc = error
-                        logger.exception(
-                            "Agent call failed on attempt %s", attempt, extra={"task": task}
-                        )
-                        if attempt <= max_retries:
-                            time.sleep(backoff_base * (2 ** (attempt - 1)))
-                            continue
-                        logger.warning(
-                            "OpenAI call failed after retries; using local fallback."
-                        )
-                        break
-
-                if last_exc:
-                    logger.info("OpenAI fallback reason: %s", last_exc)
-            except Exception as error:
-                logger.exception("Agent setup failed", extra={"error": str(error)})
-
-    return _local_agent_response(task, clauses, question)
+    try:
+        raw = _call_openai(_RISK_SYSTEM, f"Clauses:\n{clause_block}")
+        data = _parse_json(raw, [])
+        flags = []
+        for item in data:
+            index = int(item.get("clause_index", -1))
+            if 0 <= index < len(clauses):
+                flags.append(
+                    RiskFlag(
+                        clause_index=index,
+                        clause_preview=clauses[index].get("text", "")[:120],
+                        risk_type=item.get("risk_type", "unknown"),
+                        severity=item.get("severity", "medium"),
+                        reason=item.get("reason", ""),
+                    )
+                )
+        return flags
+    except Exception as exc:
+        logger.error("OpenAI flag_risky_clauses error: %s", exc)
+        return _local_risk_flags(clauses)

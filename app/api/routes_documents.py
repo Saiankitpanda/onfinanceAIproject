@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from app.services.agent_service import run_clause_agent
+from app.services.agent_service import flag_risky_clauses, query_agent
 from app.services.annotation_service import (
     build_page_annotations,
     enrich_clauses_with_annotations,
@@ -35,8 +35,7 @@ MAX_UPLOAD_SIZE = int(os.getenv("MAX_UPLOAD_SIZE", 10 * 1024 * 1024))  # 10 MB d
 
 
 class AgentRequest(BaseModel):
-    task: str
-    question: Optional[str] = None
+    question: str
 
 
 class OcrBlocksResponse(BaseModel):
@@ -360,36 +359,39 @@ def ask_agent(request: Request, document_id: str, body: AgentRequest):
             status_code=400, detail="No clauses available for agent analysis."
         )
 
-    try:
-        answer = run_clause_agent(
-            task=body.task,
-            clauses=clauses,
-            question=body.question,
-        )
-        agent_status = "ok"
-        # Agent helper returns friendly messages on missing API key or package
-        if isinstance(answer, str) and (
-            answer.lower().startswith("openai_api_key is missing")
-            or answer.lower().startswith("openai package")
-            or answer.lower().startswith("agent failed gracefully")
-        ):
-            agent_status = "error"
-    except Exception as error:
-        answer = f"Agent invocation failed: {str(error)}"
-        agent_status = "error"
-        logger.exception(
-            "Agent invocation failed",
-            extra={
-                "document_id": document_id,
-                "task": body.task,
-                "error": str(error),
-            },
-        )
+    question = body.question.strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="Question is required.")
+
+    result = query_agent(question=question, clauses=clauses)
+    risk_flags = flag_risky_clauses(clauses)
+
+    source_clauses = []
+    for index in result.source_clause_indices:
+        if 0 <= index < len(clauses):
+            clause = clauses[index]
+            source_clauses.append(
+                {
+                    "index": index,
+                    "preview": clause.get("text", "")[:200],
+                    "page": clause.get("page") or clause.get("page_start"),
+                }
+            )
+
+    risky_clauses = [
+        {
+            "index": flag.clause_index,
+            "preview": flag.clause_preview,
+            "risk_type": flag.risk_type,
+            "severity": flag.severity,
+            "reason": flag.reason,
+        }
+        for flag in risk_flags
+    ]
 
     return {
-        "document_id": document_id,
-        "task": body.task,
-        "question": body.question,
-        "answer": answer,
-        "agent_status": agent_status,
+        "answer": result.answer,
+        "source_clauses": source_clauses,
+        "risky_clauses": risky_clauses,
+        "confidence": result.confidence,
     }

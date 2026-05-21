@@ -1,11 +1,10 @@
-flake8
-pip-audit
-sentry-sdk
-pytest
-httpx
-# Add other dev tools here (black, isort, safety) as needed
-black
-isort
-pre-commit
-coverage
-codecov
+flake8==7.1.1
+pip-audit==2.7.3
+sentry-sdk==2.13.0
+pytest==8.3.3
+httpx==0.27.0
+black==24.8.0
+isort==5.13.2
+pre-commit==3.8.0
+coverage==7.6.1
+codecov==2.1.13
