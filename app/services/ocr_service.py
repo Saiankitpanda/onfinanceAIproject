@@ -1,4 +1,5 @@
 import io
+from typing import Dict, List, Optional
 
 import pymupdf
 import pytesseract
@@ -9,7 +10,7 @@ from app.services.ocr_preprocess_service import preprocess_for_ocr
 TESSERACT_CONFIG = "--oem 3 --psm 6"
 
 
-def _combine_bboxes(blocks: list[dict]) -> list[float]:
+def _combine_bboxes(blocks: List[Dict]) -> List[float]:
     x0 = min(b["bbox"][0] for b in blocks)
     y0 = min(b["bbox"][1] for b in blocks)
     x1 = max(b["bbox"][2] for b in blocks)
@@ -17,7 +18,7 @@ def _combine_bboxes(blocks: list[dict]) -> list[float]:
     return [x0, y0, x1, y1]
 
 
-def group_words_into_lines(blocks: list[dict], y_tolerance: int = 12) -> list[dict]:
+def group_words_into_lines(blocks: List[Dict], y_tolerance: int = 12) -> List[Dict]:
     """Group OCR word blocks into line-level blocks.
 
     The input blocks are expected to be word-level OCR blocks with
@@ -31,8 +32,8 @@ def group_words_into_lines(blocks: list[dict], y_tolerance: int = 12) -> list[di
         key=lambda b: (b["page"], b["bbox"][1], b["bbox"][0]),
     )
 
-    lines: list[dict] = []
-    current: dict | None = None
+    lines: List[Dict] = []
+    current: Optional[dict] = None
 
     for word in words:
         text = (word.get("text") or "").strip()
@@ -61,7 +62,7 @@ def group_words_into_lines(blocks: list[dict], y_tolerance: int = 12) -> list[di
         current["y_center"] = (current["y_center"] * (n - 1) + y_center) / n
 
     # Build final line blocks.
-    out: list[dict] = []
+    out: List[Dict] = []
     block_order = 0
 
     for line in lines:

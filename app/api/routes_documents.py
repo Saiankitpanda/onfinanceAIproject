@@ -3,7 +3,7 @@ import logging
 import os
 import shutil
 import uuid
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel
@@ -36,12 +36,12 @@ MAX_UPLOAD_SIZE = int(os.getenv("MAX_UPLOAD_SIZE", 10 * 1024 * 1024))  # 10 MB d
 
 class AgentRequest(BaseModel):
     task: str
-    question: str | None = None
+    question: Optional[str] = None
 
 
 class OcrBlocksResponse(BaseModel):
     document_id: str
-    filename: str | None = None
+    filename: Optional[str] = None
     processing_mode: str
     total_blocks: int
     blocks: List[Dict]

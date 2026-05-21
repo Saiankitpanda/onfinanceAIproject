@@ -1,9 +1,10 @@
 import os
 import re
 from uuid import uuid4
+from typing import Optional
 
 
-def sanitize_filename(filename: str | None) -> str:
+def sanitize_filename(filename: Optional[str]) -> str:
     """
     Convert uploaded filename into a safe filename.
 

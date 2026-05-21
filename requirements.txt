@@ -8,5 +8,3 @@ opencv-python
 python-dotenv
 openai
 slowapi
-pytest
-httpx

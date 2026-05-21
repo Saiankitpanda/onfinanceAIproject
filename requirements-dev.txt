@@ -1,6 +1,8 @@
 flake8
 pip-audit
 sentry-sdk
+pytest
+httpx
 # Add other dev tools here (black, isort, safety) as needed
 black
 isort

@@ -2,7 +2,7 @@ import logging
 import os
 import re
 import time
-from typing import Iterable
+from typing import Iterable, List, Optional
 
 from dotenv import load_dotenv
 
@@ -157,7 +157,7 @@ def _normalize_words(text: str) -> set[str]:
     return {token for token in tokens if token not in stop_words}
 
 
-def _find_relevant_clauses(question: str, clauses: list) -> list[dict]:
+def _find_relevant_clauses(question: str, clauses: List) -> List[dict]:
     question_words = _normalize_words(question)
     if not question_words:
         return clauses[:3]
@@ -189,7 +189,7 @@ def _build_local_summary(clauses: list) -> str:
     )
 
 
-def _build_local_explanation(clauses: list, question: str | None) -> str:
+def _build_local_explanation(clauses: List, question: Optional[str]) -> str:
     if not clauses:
         return "The provided clauses do not contain enough information."
 
@@ -202,7 +202,7 @@ def _build_local_explanation(clauses: list, question: str | None) -> str:
     )
 
 
-def _build_local_question_answer(clauses: list, question: str | None) -> str:
+def _build_local_question_answer(clauses: List, question: Optional[str]) -> str:
     question_text = (question or "").strip()
     if not question_text:
         return _build_local_summary(clauses)
@@ -300,7 +300,7 @@ def _build_validation_notes(clauses: list) -> str:
     return "\n".join(f"- {note}" for note in notes)
 
 
-def _local_agent_response(task: str, clauses: list, question: str | None) -> str:
+def _local_agent_response(task: str, clauses: List, question: Optional[str]) -> str:
     normalized_task = task.lower().strip()
 
     if normalized_task == "summarize":
@@ -321,7 +321,7 @@ def _local_agent_response(task: str, clauses: list, question: str | None) -> str
     return _build_local_question_answer(clauses, question)
 
 
-def _format_cloud_two_paragraph_prompt(task: str, question: str | None) -> str:
+def _format_cloud_two_paragraph_prompt(task: str, question: Optional[str]) -> str:
     return f"""
 Respond in exactly 2 short paragraphs separated by a blank line.
 
@@ -340,7 +340,7 @@ Question: {question if question else "No specific question provided."}
 """
 
 
-def run_clause_agent(task: str, clauses: list, question: str | None = None) -> str:
+def run_clause_agent(task: str, clauses: List, question: Optional[str] = None) -> str:
     if not clauses:
         return "No clauses were provided to the agent."
 
